@@ -1,7 +1,3 @@
-
-
-
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -12,7 +8,6 @@
 
 #include <linux/i2c.h>
 #include <mach/bma020.h>
-
 
 static struct i2c_client *this_client;
 
@@ -150,19 +145,19 @@ static bool getxyz8(signed char * data)
 
 }
 
-static void DoCal_Step1()
+static void DoCal_Step1(void)
 {
     getxyz(&cal45A);
 	printk("DoCal_Step1 x = %d, y = %d\n", cal45A.XVal, cal45A.YVal);
 }
 
-static void DoCal_Step2()
+static void DoCal_Step2(void)
 {
     getxyz(&cal45B);
 	printk("DoCal_Step2 x = %d, y = %d\n", cal45B.XVal, cal45B.YVal);
 }
 
-static int DoCal_Bosch()
+static int DoCal_Bosch(void)
 {
     MON_XYZ_INT calNumber;
 
@@ -187,10 +182,6 @@ static int DoCal_Bosch()
     	calvalue.xyz.YVal = calNumber.YVal;
 		return 0;
 	}
-	
-    //CalData.calNumber.ZVal = calNumber.ZVal;
-	//calvalue.scalex = BMA020CAL_SCALE;
-	//calvalue.scaley = BMA020CAL_SCALE;
 
 	//store the cal value to file so that next time read it out
 
@@ -331,8 +322,6 @@ static int motion_ioctl(struct inode *inode, struct file *filp, unsigned int cmd
 					calvalue.scaley = BMA020CAL_SCALE;
 				}
 				
-				//if (copy_to_user(&CalData, arg, sizeof(CalData)))
-				//	ret = -EFAULT;
  		       	printk("XYZ %d %d %d, scalx %d, scaly %d\r\n", calvalue.xyz.XVal, calvalue.xyz.YVal, calvalue.xyz.ZVal, calvalue.scalex, calvalue.scaley);
 				ret = 0;
 			}

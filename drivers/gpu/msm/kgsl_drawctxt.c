@@ -73,11 +73,9 @@
 
 /* Constants */
 
-#undef DISABLE_SHADOW_WRITES
-
 #define ALU_CONSTANTS	2048	/* DWORDS */
 #define NUM_REGISTERS	1024	/* DWORDS */
-#ifdef DISABLE_SHADOW_WRITES
+#ifdef CONFIG_MSM_KGSL_DISABLE_SHADOW_WRITES
 #define CMD_BUFFER_LEN  9216	/* DWORDS */
 #else
 #define CMD_BUFFER_LEN	3072	/* DWORDS */
@@ -99,7 +97,7 @@
 
 #define ALU_SHADOW_SIZE		LCC_SHADOW_SIZE	/* 8KB */
 #define REG_SHADOW_SIZE		0x1000	/* 4KB */
-#ifdef DISABLE_SHADOW_WRITES
+#ifdef CONFIG_MSM_KGSL_DISABLE_SHADOW_WRITES
 #define CMD_BUFFER_SIZE     0x9000	/* 36KB */
 #else
 #define CMD_BUFFER_SIZE		0x3000	/* 12KB */
@@ -425,7 +423,7 @@ static unsigned int *reg_to_mem(unsigned int *cmds, uint32_t dst,
 	return cmds;
 }
 
-#ifdef DISABLE_SHADOW_WRITES
+#ifdef CONFIG_MSM_KGSL_DISABLE_SHADOW_WRITES
 
 static void build_reg_to_mem_range(unsigned int start, unsigned int end,
 				   unsigned int **cmd,
@@ -480,7 +478,7 @@ static void build_regsave_cmds(struct kgsl_device *device,
 	*cmd++ = pm4_type3_packet(PM4_WAIT_FOR_IDLE, 1);
 	*cmd++ = 0;
 
-#ifdef DISABLE_SHADOW_WRITES
+#ifdef CONFIG_MSM_KGSL_DISABLE_SHADOW_WRITES
 	/* Make sure the HW context has the correct register values
 	 * before reading them. */
 	*cmd++ = pm4_type3_packet(PM4_CONTEXT_UPDATE, 1);
@@ -491,7 +489,7 @@ static void build_regsave_cmds(struct kgsl_device *device,
 	*cmd++ = pm4_type0_packet(REG_RBBM_PM_OVERRIDE1, 1);
 	*cmd++ = pm_override1 | (1 << 6);
 
-#ifdef DISABLE_SHADOW_WRITES
+#ifdef CONFIG_MSM_KGSL_DISABLE_SHADOW_WRITES
 	/* Write HW registers into shadow */
 	build_reg_to_mem_range(REG_RB_SURFACE_INFO, REG_RB_DEPTH_INFO, &cmd,
 			       drawctxt);
@@ -1090,7 +1088,7 @@ static void build_regrestore_cmds(struct kgsl_device *device,
 	/* H/W Registers */
 	/* deferred pm4_type3_packet(PM4_LOAD_CONSTANT_CONTEXT, ???); */
 	cmd++;
-#ifdef DISABLE_SHADOW_WRITES
+#ifdef CONFIG_MSM_KGSL_DISABLE_SHADOW_WRITES
 	/* Force mismatch */
 	*cmd++ = ((drawctxt->gpustate.gpuaddr + REG_OFFSET) & 0xFFFFE000) | 1;
 #else
@@ -1121,7 +1119,7 @@ static void build_regrestore_cmds(struct kgsl_device *device,
 	start[4] =
 	    pm4_type3_packet(PM4_LOAD_CONSTANT_CONTEXT, (cmd - start) - 5);
 	/* Enable shadowing for the entire register block. */
-#ifdef DISABLE_SHADOW_WRITES
+#ifdef CONFIG_MSM_KGSL_DISABLE_SHADOW_WRITES
 	start[6] |= (0 << 24) | (4 << 16);	/* Disable shadowing. */
 #else
 	start[6] |= (1 << 24) | (4 << 16);
@@ -1149,7 +1147,7 @@ static void build_regrestore_cmds(struct kgsl_device *device,
 	/* ALU Constants */
 	*cmd++ = pm4_type3_packet(PM4_LOAD_CONSTANT_CONTEXT, 3);
 	*cmd++ = drawctxt->gpustate.gpuaddr & 0xFFFFE000;
-#ifdef DISABLE_SHADOW_WRITES
+#ifdef CONFIG_MSM_KGSL_DISABLE_SHADOW_WRITES
 	*cmd++ = (0 << 24) | (0 << 16) | 0;	/* Disable shadowing */
 #else
 	*cmd++ = (1 << 24) | (0 << 16) | 0;
@@ -1159,7 +1157,7 @@ static void build_regrestore_cmds(struct kgsl_device *device,
 	/* Texture Constants */
 	*cmd++ = pm4_type3_packet(PM4_LOAD_CONSTANT_CONTEXT, 3);
 	*cmd++ = (drawctxt->gpustate.gpuaddr + TEX_OFFSET) & 0xFFFFE000;
-#ifdef DISABLE_SHADOW_WRITES
+#ifdef CONFIG_MSM_KGSL_DISABLE_SHADOW_WRITES
 	/* Disable shadowing */
 	*cmd++ = (0 << 24) | (1 << 16) | 0;
 #else

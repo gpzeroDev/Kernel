@@ -1132,7 +1132,6 @@ if (0)
 	pbuf = (unsigned short *)(fbi->screen_base);    
     for (j = 0; j < 320; j++) {
         *pbuf = 0xFFFF;
-        *pbuf++;        
     }
     
     for (i = 0; i < 159; i ++) {
@@ -1173,14 +1172,12 @@ if (0)
 
     for (j = 0; j < 320; j++) {
         *pbuf = 0xFFFF;
-        *pbuf++;
     }
     
 	printk(KERN_ERR "stop by wangyu");
     while(1);
 }
 	if(battchg_pause == 0)
-	//if(0x40 != power_on_status && power_on_status != 0x44 && power_on_status != 0x41)
 	{	
 		if(fbi->var.xres == 320 && fbi->var.yres ==480)
 		{

@@ -264,11 +264,13 @@ static struct kgsl_pagetable *kgsl_mmu_createpagetableobject(
 	if (status != 0)
 		goto err_pool;
 
-	/* reset page table entries
-	 * -- all pte's are marked as not dirty initially
-	 */
-	kgsl_sharedmem_set(&pagetable->base, 0, 0, pagetable->base.size);
-
+	if (status == 0) {
+		/* reset page table entries
+		 * -- all pte's are marked as not dirty initially
+		 */
+		kgsl_sharedmem_set(&pagetable->base, 0, 0,
+				   pagetable->base.size);
+	}
 	pagetable->base.gpuaddr = pagetable->base.physaddr;
 
 	status = kgsl_setup_pt(pagetable);
