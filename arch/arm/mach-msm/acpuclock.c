@@ -57,7 +57,8 @@ enum {
 	ACPU_PLL_END,
 };
 
-struct clock_state {
+struct clock_state
+{
 	struct clkctl_acpu_speed	*current_speed;
 	struct mutex			lock;
 	uint32_t			acpu_switch_time_us;
@@ -204,26 +205,40 @@ static struct clkctl_acpu_speed pll0_960_pll1_245_pll2_1200[] = {
 	{ 0, 19200, ACPU_PLL_TCXO, 0, 0, 19200, 0, 0, 30720 },
 	{ 0, 120000, ACPU_PLL_0, 4, 7,  60000, 1, 3,  61440 },
 	{ 1, 122880, ACPU_PLL_1, 1, 1,  61440, 1, 3,  61440 },
-	{ 0, 201600, ACPU_PLL_2, 2, 5,  67200, 2, 4,  61440 },
+#ifdef CONFIG_CPU_OC
+	#ifdef CPU_OC_AHB
+		{ 0, 201600, ACPU_PLL_2, 2, 5,  67200, 2, 4,  61440 },
+	#else
+		{ 0, 200000, ACPU_PLL_2, 2, 5,  66667, 2, 4,  61440 },
+	#endif
 	{ 1, 245760, ACPU_PLL_1, 1, 0, 122880, 1, 4,  61440 },
 	{ 1, 320000, ACPU_PLL_0, 4, 2, 160000, 1, 5, 122880 },
-	{ 0, 403200, ACPU_PLL_2, 2, 2, 134400, 2, 5, 122880 },
+	#ifdef CPU_OC_AHB
+		{ 0, 403200, ACPU_PLL_2, 2, 2, 134400, 2, 5, 122880 },
+	#else
+		{ 0, 400000, ACPU_PLL_2, 2, 2, 133333, 2, 5, 122880 },
+	#endif
+	{ 0, 400000, ACPU_PLL_2, 2, 2, 133333, 2, 5, 122880 },
 	{ 1, 480000, ACPU_PLL_0, 4, 1, 160000, 2, 6, 122880 },
-	{ 1, 604800, ACPU_PLL_2, 2, 1, 201600, 2, 7, 200000 },
-//	{ 1, 614400, ACPU_PLL_0, 4, 0, 204800, 2, 7, 200000 },
-//	{ 1, 633600, ACPU_PLL_0, 4, 0, 211200, 2, 7, 200000 },
-	{ 1, 652800, ACPU_PLL_0, 4, 0, 217600, 2, 7, 200000 },
-	{ 1, 672000, ACPU_PLL_0, 4, 0, 224000, 2, 7, 200000 },
-	{ 1, 691200, ACPU_PLL_0, 4, 0, 230400, 2, 7, 200000 },
-	{ 1, 710400, ACPU_PLL_0, 4, 0, 236800, 2, 7, 200000 },
-	{ 1, 729600, ACPU_PLL_0, 4, 0, 243200, 2, 7, 200000 },
-	{ 1, 748800, ACPU_PLL_0, 4, 0, 249600, 2, 7, 200000 },
-	{ 1, 768000, ACPU_PLL_0, 4, 0, 256000, 2, 7, 200000 },
-//	{ 1, 787200, ACPU_PLL_0, 4, 0, 262400, 2, 7, 200000 },
-//	{ 1, 806400, ACPU_PLL_0, 4, 0, 268800, 2, 7, 200000 },
-//	{ 1, 825600, ACPU_PLL_0, 4, 0, 275200, 2, 7, 200000 },
-//	{ 1, 844800, ACPU_PLL_0, 4, 0, 281600, 2, 7, 200000 },
-//  { 1, 864000, ACPU_PLL_0, 4, 0, 288000, 2, 7, 200000 },
+	#ifdef CPU_OC_AHB
+		{ 1, 604800, ACPU_PLL_2, 2, 1, 201600, 2, 7, 200000 },
+	#else
+		{ 1, 600000, ACPU_PLL_2, 2, 1, 200000, 2, 7, 122880 },
+	#endif
+	{ 1, 652800, ACPU_PLL_0, 4, 0, 217600, 2, 7, 122880 },
+	{ 1, 672000, ACPU_PLL_0, 4, 0, 224000, 2, 7, 122880 },
+	{ 1, 691200, ACPU_PLL_0, 4, 0, 230400, 2, 7, 122880 },
+	{ 1, 710400, ACPU_PLL_0, 4, 0, 236800, 2, 7, 122880 },
+	{ 1, 729600, ACPU_PLL_0, 4, 0, 243200, 2, 7, 122880 },
+	{ 1, 748800, ACPU_PLL_0, 4, 0, 249600, 2, 7, 122880 },
+#else
+	{ 0, 200000, ACPU_PLL_2, 2, 5,  66667, 2, 4,  61440 },
+	{ 1, 245760, ACPU_PLL_1, 1, 0, 122880, 1, 4,  61440 },
+	{ 1, 320000, ACPU_PLL_0, 4, 2, 160000, 1, 5, 122880 },
+	{ 0, 400000, ACPU_PLL_2, 2, 2, 133333, 2, 5, 122880 },
+	{ 1, 480000, ACPU_PLL_0, 4, 1, 160000, 2, 6, 122880 },
+	{ 1, 600000, ACPU_PLL_2, 2, 1, 200000, 2, 7, 122880 },
+#endif
 	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, {0, 0, 0}, {0, 0, 0} }
 };
 
@@ -247,8 +262,11 @@ static struct clkctl_acpu_speed pll0_960_pll1_196_pll2_1200[] = {
 #define PLL_768_MHZ	40
 #define PLL_960_MHZ	50
 #define PLL_1056_MHZ	55
-//#define PLL_1200_MHZ	62
-#define PLL_1200_MHZ	63
+#ifdef CPU_OC_AHB
+	#define PLL_1200_MHZ	63
+#else
+	#define PLL_1200_MHZ	62
+#endif
 
 #define PLL_CONFIG(m0, m1, m2) { \
 	PLL_##m0##_MHZ, PLL_##m1##_MHZ, PLL_##m2##_MHZ, \
@@ -331,6 +349,7 @@ static int pc_pll_request(unsigned id, unsigned on)
 			pll_control->pll[PLL_BASE + id].votes |= 2;
 			if (!pll_control->pll[PLL_BASE + id].on) {
 				writel(6, PLLn_MODE(id));
+				dsb();
 				udelay(50);
 				writel(7, PLLn_MODE(id));
 				pll_control->pll[PLL_BASE + id].on = 1;
@@ -391,6 +410,7 @@ static int acpuclk_set_vdd_level(int vdd)
 	       current_vdd, vdd);
 
 	writel((1 << 7) | (vdd << 3), A11S_VDD_SVS_PLEVEL_ADDR);
+	dsb();
 	udelay(drv_state.vdd_switch_time_us);
 	if ((readl(A11S_VDD_SVS_PLEVEL_ADDR) & 0x7) != vdd) {
 		pr_err("VDD set failed\n");
@@ -424,7 +444,7 @@ static void acpuclk_set_div(const struct clkctl_acpu_speed *hunt_s) {
 	}
 
 	// Perform overclocking if requested
-	if(hunt_s->a11clk_khz>604800) {
+	if(hunt_s->a11clk_khz>600000) {
 		// Change the speed of PLL0
 		writel(hunt_s->a11clk_khz/19200, PLLn_L_VAL(0));
 		udelay(50);
@@ -442,7 +462,7 @@ static void acpuclk_set_div(const struct clkctl_acpu_speed *hunt_s) {
 	writel(reg_clksel, A11S_CLK_SEL_ADDR);
 
 	// Recover from overclocking
-	if(hunt_s->a11clk_khz<=604800) {
+	if(hunt_s->a11clk_khz<=600000) {
 		// Restore the speed of PLL0
 		writel(PLL_960_MHZ, PLLn_L_VAL(0));
 		udelay(50);
@@ -590,6 +610,7 @@ int acpuclk_set_rate(int cpu, unsigned long rate, enum setrate_reason reason)
 		drv_state.current_speed = cur_s;
 		/* Re-adjust lpj for the new clock speed. */
 		loops_per_jiffy = cur_s->lpj;
+		dsb();
 		udelay(drv_state.acpu_switch_time_us);
 	}
 
@@ -927,8 +948,6 @@ void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *clkdata)
 	pr_info("acpu_clock_init()\n");
 
 	mutex_init(&drv_state.lock);
-	if (cpu_is_msm7x27())
-		shared_pll_control_init();
 	drv_state.acpu_switch_time_us = clkdata->acpu_switch_time_us;
 	drv_state.max_speed_delta_khz = clkdata->max_speed_delta_khz;
 	drv_state.vdd_switch_time_us = clkdata->vdd_switch_time_us;
@@ -940,6 +959,8 @@ void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *clkdata)
 	acpuclk_init();
 	lpj_init();
 	print_acpu_freq_tbl();
+	if (cpu_is_msm7x27())
+		shared_pll_control_init();
 #ifdef CONFIG_CPU_FREQ_MSM
 	cpufreq_table_init();
 	cpufreq_frequency_table_get_attr(freq_table, smp_processor_id());

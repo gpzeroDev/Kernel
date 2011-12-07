@@ -131,6 +131,9 @@ static int bluesleep_hci_event(struct notifier_block *this,
 /** Global state flags */
 static unsigned long flags;
 
+/** Tasklet to respond to change in hostwake line */
+static struct tasklet_struct hostwake_task;
+
 /** Transmission timer */
 static struct timer_list tx_timer;
 
@@ -875,6 +878,9 @@ static int __init bluesleep_init(void)
 	init_timer(&tx_timer);
 	tx_timer.function = bluesleep_tx_timer_expire;
 	tx_timer.data = 0;
+
+	/* initialize host wake tasklet */
+	tasklet_init(&hostwake_task, bluesleep_hostwake_task, 0);
 
 	hci_register_notifier(&hci_event_nblock);
 

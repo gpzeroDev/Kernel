@@ -294,7 +294,7 @@ static inline enum chg_type usb_get_chg_type(struct usb_info *ui)
 	}
 }
 
-#define USB_WALLCHARGER_CHG_CURRENT 1800
+#define USB_WALLCHARGER_CHG_CURRENT 700
 static int usb_get_max_power(struct usb_info *ui)
 {
 	struct msm_otg *otg = to_msm_otg(ui->xceiv);
@@ -317,7 +317,7 @@ static int usb_get_max_power(struct usb_info *ui)
 	if (temp == USB_CHG_TYPE__INVALID)
 		return -ENODEV;
 
-	if (temp == USB_CHG_TYPE__WALLCHARGER)
+	if (temp == USB_CHG_TYPE__WALLCHARGER || temp == USB_CHG_TYPE__SDP)
 		return USB_WALLCHARGER_CHG_CURRENT;
 
 	if (suspended || !configured)

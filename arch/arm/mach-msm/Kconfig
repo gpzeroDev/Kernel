@@ -851,6 +851,19 @@ config MSM_CPU_FREQ_SET_MIN_MAX
 	  Allow setting min and max CPU frequencies. Sysfs can be used
 	  to override these values.
 
+config CPU_OC
+	bool "CPU Overclock"
+	default n
+	help
+	  Allow to overclock cpu speed
+
+config CPU_OC_AHB
+	bool "CPU AHB Overclock"
+	depends on (CPU_OC)
+	default n
+	help
+	  More overclock
+
 config MSM_CPU_FREQ_MAX
 	int "Max CPU Frequency"
 	depends on MSM_CPU_FREQ_SET_MIN_MAX
