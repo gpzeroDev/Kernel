@@ -33,28 +33,24 @@ static DEFINE_SPINLOCK(atom_lock);
 extern struct gpio_chip *gpio2chip(unsigned int gpio);
 
 static void Tpsc(TpsPumpRes_t *pstRes, u32 n, bool Dir) {
-    struct gpio_chip * chip;
+	struct gpio_chip * chip;
     unsigned long irq_flags;
     u32 i, offset, delay, loops;
-    
     chip = gpio2chip(pstRes->Id);
     offset = pstRes->Id - chip->base;
     delay = Dir ? 20 : 200;
     
-    //printk("Tpsc n:%d, d:%d\n", n, Dir);
-
     spin_lock_irqsave(&atom_lock, irq_flags);
     loops = loops_per_jiffy/(1000000/HZ);
     loops *= delay;
     for (i = 0; i < n; i++) {
         gpio_direction_output(pstRes->Id, 1);
-        // delay 1us
+	    udelay(1);
         gpio_direction_output(pstRes->Id, 0);
         __delay(loops);
     }
     gpio_direction_output(pstRes->Id, 1);
     spin_unlock_irqrestore(&atom_lock, irq_flags);
-
     udelay(1000);
 }
 
@@ -70,8 +66,6 @@ uint Tps61045Lv(uint Lv) {
 void Tps61045Set(TpsPumpRes_t *pstRes) {
     uint Delta;
 
-    //printk("CurLv:%d, DesLv:%d\n", pstRes->CurLv, pstRes->DesLv);
-
     if (pstRes->DesLv > pstRes->CurLv) {
         Delta = pstRes->DesLv - pstRes->CurLv;
         Tpsc(pstRes, Delta, true);        
@@ -83,6 +77,7 @@ void Tps61045Set(TpsPumpRes_t *pstRes) {
     else {
         gpio_set_value(pstRes->Id, 1);
     }
+	udelay(1);
     pstRes->CurLv = pstRes->DesLv;
 }
 
@@ -141,7 +136,9 @@ static int __init Tps61045Probe(struct platform_device *pdev) {
         rc = gpio_request(TpsRes.Id, "ctrl_pin");
         if (rc)
             break;
+
         gpio_direction_output(TpsRes.Id, 0);
+		udelay(1);
         Tps61045PowerOff(&TpsRes);
 
         res = platform_get_resource_byname(TpsRes.Device, IORESOURCE_IO, "lvs");
@@ -157,9 +154,8 @@ static int __init Tps61045Probe(struct platform_device *pdev) {
         }
         printk(KERN_INFO "%s: get max level %d\n", __func__, TpsRes.MaxLv);
         TpsRes.CurLv = TpsRes.DesLv = TPS_HW_MAX_LV;
-        
+		udelay(1);        
         ChargePumpRegIf(&_ChargePumpIf);
-        
     } while(0);
 
     return rc;
@@ -186,10 +182,10 @@ void __exit Tps61045Exit(void)
     platform_driver_unregister(&Tps61045River);
 }
 
-module_init(Tps61045Init);
-module_exit(Tps61045Exit);
-
 void ChargePumpTest(void) {
     Tpsc(&TpsRes, 2, false);
 }
 EXPORT_SYMBOL(ChargePumpTest);
+
+module_init(Tps61045Init);
+module_exit(Tps61045Exit);

@@ -50,59 +50,8 @@
 #include "gpio.h"
 #include "timer.h"
 #include "pm.h"
-#include "spm.h"/* arch/arm/mach-msm/pm2.c
- *
- * MSM Power Management Routines
- *
- * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2008-2010, Code Aurora Forum. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- */
-
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/clk.h>
-#include <linux/delay.h>
-#include <linux/init.h>
-#include <linux/pm.h>
-#include <linux/pm_qos_params.h>
-#include <linux/proc_fs.h>
-#include <linux/suspend.h>
-#include <linux/reboot.h>
-#include <linux/uaccess.h>
-#include <linux/io.h>
-#ifdef CONFIG_HAS_WAKELOCK
-#include <linux/wakelock.h>
-#endif
-#include <mach/msm_iomap.h>
-#include <mach/system.h>
-#ifdef CONFIG_CACHE_L2X0
-#include <asm/hardware/cache-l2x0.h>
-#endif
-#ifdef CONFIG_VFP
-#include <asm/vfp.h>
-#endif
-
-#include "smd_private.h"
-#include "smd_rpcrouter.h"
-#include "acpuclock.h"
-#include "clock.h"
-#include "proc_comm.h"
-#include "idle.h"
-#include "irq.h"
-#include "gpio.h"
-#include "timer.h"
-#include "pm.h"
 #include "spm.h"
+#include "sirc.h"
 #include "proc_comm.h"
 
 /******************************************************************************
@@ -389,7 +338,6 @@ mode_sysfs_add_cleanup:
 		kfree(msm_pm_mode_attr_group[i]);
 		kobject_put(msm_pm_mode_kobjs[i]);
 	}
-
 
 	return ret;
 }
@@ -1007,6 +955,7 @@ static int msm_pm_power_collapse
 	memset(msm_pm_smem_data, 0, sizeof(*msm_pm_smem_data));
 
 	msm_irq_enter_sleep1(true, from_idle, &msm_pm_smem_data->irq_mask);
+	msm_sirc_enter_sleep();
 	msm_gpio_enter_sleep(from_idle);
 
 	msm_pm_smem_data->sleep_time = sleep_delay;
@@ -1207,6 +1156,7 @@ static int msm_pm_power_collapse
 		msm_pm_smem_data->wakeup_reason,
 		msm_pm_smem_data->pending_irqs);
 	msm_gpio_exit_sleep();
+	msm_sirc_exit_sleep();
 
 	smsm_change_state(SMSM_APPS_DEM,
 		DEM_SLAVE_SMSM_WFPI, DEM_SLAVE_SMSM_RUN);
@@ -1254,6 +1204,7 @@ power_collapse_early_exit:
 
 power_collapse_restore_gpio_bail:
 	msm_gpio_exit_sleep();
+	msm_sirc_exit_sleep();
 
 	/* Enter RUN */
 	smsm_change_state(SMSM_APPS_DEM,
@@ -1737,13 +1688,11 @@ static void msm_pm_power_off(void)
 		;
 }
 
-
-static void msm_pm_restart(char str)
+static void msm_pm_restart(char str, const char *cmd)
 {
 	msm_rpcrouter_close();
-	printk("send PCOM_RESET_CHIP\n");
-	msm_proc_comm(PCOM_RESET_CHIP, &restart_reason, 0);
-	printk("Do Nothing!!\n");
+	msm_proc_comm(PCOM_RESET_CHIP_IMM, &restart_reason, 0);
+
 	for (;;)
 		;
 }
@@ -1751,7 +1700,6 @@ static void msm_pm_restart(char str)
 static int msm_reboot_call
 	(struct notifier_block *this, unsigned long code, void *_cmd)
 {
-    printk("msm_reboot_call++\n");	
 	if ((code == SYS_RESTART) && _cmd) {
 		char *cmd = _cmd;
 		if (!strcmp(cmd, "bootloader")) {
