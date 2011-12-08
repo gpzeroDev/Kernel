@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32.9
-# Wed Dec  7 21:13:50 2011
+# Thu Dec  8 01:20:27 2011
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -1152,6 +1152,8 @@ CONFIG_POWER_SUPPLY=y
 # CONFIG_BATTERY_BQ27x00 is not set
 # CONFIG_BATTERY_MAX17040 is not set
 CONFIG_BATTERY_MSM=y
+CONFIG_SIMCUST_BATTERY_PERCENT_FOR_PE28=y
+# CONFIG_USE_OLD_BATT_PAUSE is not set
 # CONFIG_BATTERY_MSM_FAKE is not set
 # CONFIG_HWMON is not set
 # CONFIG_THERMAL is not set
