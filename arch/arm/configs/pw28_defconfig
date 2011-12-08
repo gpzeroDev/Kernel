@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32.9
-# Thu Dec  8 19:33:19 2011
+# Thu Dec  8 19:49:03 2011
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -104,9 +104,9 @@ CONFIG_AIO=y
 #
 CONFIG_VM_EVENT_COUNTERS=y
 CONFIG_COMPAT_BRK=y
-# CONFIG_SLAB is not set
+CONFIG_SLAB=y
 # CONFIG_SLUB is not set
-CONFIG_SLQB=y
+# CONFIG_SLQB is not set
 # CONFIG_SLOB is not set
 # CONFIG_PROFILING is not set
 CONFIG_HAVE_OPROFILE=y
@@ -1829,8 +1829,7 @@ CONFIG_DEBUG_KERNEL=y
 # CONFIG_SCHEDSTATS is not set
 CONFIG_TIMER_STATS=y
 # CONFIG_DEBUG_OBJECTS is not set
-# CONFIG_SLQB_DEBUG is not set
-# CONFIG_SLQB_SYSFS is not set
+# CONFIG_DEBUG_SLAB is not set
 # CONFIG_DEBUG_KMEMLEAK is not set
 # CONFIG_DEBUG_PREEMPT is not set
 # CONFIG_DEBUG_RT_MUTEXES is not set
