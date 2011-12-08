@@ -1711,6 +1711,9 @@ static void update_shares_locked(struct rq *rq, struct sched_domain *sd)
 
 static void update_h_load(long cpu)
 {
+	if (root_task_group_empty())
+		return;
+
 	walk_tg_tree(tg_load_down, tg_nop, (void *)cpu);
 }
 
@@ -2910,7 +2913,6 @@ unsigned long nr_running(void)
 	return sum;
 }
 EXPORT_SYMBOL_GPL(nr_running);
-
 unsigned long nr_uninterruptible(void)
 {
 	unsigned long i, sum = 0;
