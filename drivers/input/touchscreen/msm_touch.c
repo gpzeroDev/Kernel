@@ -222,8 +222,6 @@ static void ts_update_pen_state(struct ts *ts, int x, int y, int pressure)
 
 		lcd_y = Y_MAX - lcd_y;
 
-	//	printk("[ts to lcd] x:%d, y:%d \n", lcd_x, lcd_y);
-
 		input_report_abs(ts->input, ABS_X, lcd_x & 0xfff);
 		input_report_abs(ts->input, ABS_Y, lcd_y & 0xfff);
 
@@ -292,13 +290,13 @@ static irqreturn_t ts_interrupt(int irq, void *dev_id)
 		 * These x, y co-ordinates adjustments will be removed once
 		 * Android framework adds calibration framework.
 		 */
-//#ifdef CONFIG_ANDROID_TOUCHSCREEN_MSM_HACKS
-//		lx = ts->x_max - x;
-//		ly = ts->y_max - y;
-//#else
+#ifdef CONFIG_ANDROID_TOUCHSCREEN_MSM_HACKS
+		lx = ts->x_max - x;
+		ly = ts->y_max - y;
+#else
 		lx = x;
 		ly = y;
-//#endif
+#endif
 		ts_update_pen_state(ts, lx, ly, 255);
 		/* kick pen up timer - to make sure it expires again(!) */
 		mod_timer(&ts->timer,
