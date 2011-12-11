@@ -246,8 +246,6 @@ static void synaptics_ts_report(
 
     if (s_num > num) {
         for (f = 0; f < (s_num - num); f++) {
-				input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
-				input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, w);
 				input_mt_sync(ts->input_dev);
         }
     }
@@ -270,8 +268,6 @@ static void synaptics_ts_report(
             }
 #endif
         }
-					input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
-					input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, w);
 					input_mt_sync(ts->input_dev);
 				}
 				input_sync(ts->input_dev);

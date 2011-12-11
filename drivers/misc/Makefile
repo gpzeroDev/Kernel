@@ -29,7 +29,7 @@ obj-y				+= eeprom/
 obj-y				+= cb710/
 obj-$(CONFIG_WL127X_RFKILL)	+= wl127x-rfkill.o
 obj-$(CONFIG_APANIC)		+= apanic.o
-obj-y               += version_dev.o
+obj-$(CONFIG_USE_OLD_BATT_PAUSE)  += version_dev.o
 obj-y               += oemrpc_dev.o
 
 obj-$(CONFIG_TSIF) += msm_tsif.o

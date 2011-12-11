@@ -247,7 +247,7 @@ static int req_acm_diag_pkg(
         pkg_size = sizeof(struct acm_diag_pkg) + req_pkg_ptr->header.cmd_buf_length;
         memcpy(&req_msg_ptr->args.diag_pkg, req_pkg_ptr, pkg_size);
         req_msg_ptr->args.diag_pkg_size = cpu_to_be32(pkg_size);
-        
+
         dump_mem("req_msg_ptr", (unsigned long)req_msg_ptr, msg_size);
         
         rc = msm_rpc_call_reply(ept,
