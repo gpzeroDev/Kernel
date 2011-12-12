@@ -349,7 +349,6 @@ static int pc_pll_request(unsigned id, unsigned on)
 			pll_control->pll[PLL_BASE + id].votes |= 2;
 			if (!pll_control->pll[PLL_BASE + id].on) {
 				writel(6, PLLn_MODE(id));
-				dsb();
 				udelay(50);
 				writel(7, PLLn_MODE(id));
 				pll_control->pll[PLL_BASE + id].on = 1;
@@ -410,7 +409,6 @@ static int acpuclk_set_vdd_level(int vdd)
 	       current_vdd, vdd);
 
 	writel((1 << 7) | (vdd << 3), A11S_VDD_SVS_PLEVEL_ADDR);
-	dsb();
 	udelay(drv_state.vdd_switch_time_us);
 	if ((readl(A11S_VDD_SVS_PLEVEL_ADDR) & 0x7) != vdd) {
 		pr_err("VDD set failed\n");
@@ -610,7 +608,6 @@ int acpuclk_set_rate(int cpu, unsigned long rate, enum setrate_reason reason)
 		drv_state.current_speed = cur_s;
 		/* Re-adjust lpj for the new clock speed. */
 		loops_per_jiffy = cur_s->lpj;
-		dsb();
 		udelay(drv_state.acpu_switch_time_us);
 	}
 
@@ -697,9 +694,6 @@ static void __init acpuclk_init(void)
 	}
 
 	drv_state.current_speed = speed;
-	if (speed->pll != ACPU_PLL_TCXO)
-		if (pc_pll_request(speed->pll, 1))
-			pr_warning("Failed to vote for boot PLL\n");
 
 	res = ebi1_clk_set_min_rate(CLKVOTE_ACPUCLK, speed->axiclk_khz * 1000);
 	if (res < 0)
@@ -753,8 +747,6 @@ static void __init acpu_freq_tbl_fixup(void)
 	} while (pll1_l == 0);
 	/* Overclock PLL2 to it's maximum frequency */
 	/* This little trick overclocks the default */
-	/* 595.2MHz to 604.8MHz and also oveclocks  */
-	/* the GPU with 1.6%						*/
 	writel(PLL_1200_MHZ, PLLn_L_VAL(2));
 	udelay(50);
 	do {
@@ -948,6 +940,8 @@ void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *clkdata)
 	pr_info("acpu_clock_init()\n");
 
 	mutex_init(&drv_state.lock);
+	if (cpu_is_msm7x27())
+		shared_pll_control_init();
 	drv_state.acpu_switch_time_us = clkdata->acpu_switch_time_us;
 	drv_state.max_speed_delta_khz = clkdata->max_speed_delta_khz;
 	drv_state.vdd_switch_time_us = clkdata->vdd_switch_time_us;
@@ -959,8 +953,6 @@ void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *clkdata)
 	acpuclk_init();
 	lpj_init();
 	print_acpu_freq_tbl();
-	if (cpu_is_msm7x27())
-		shared_pll_control_init();
 #ifdef CONFIG_CPU_FREQ_MSM
 	cpufreq_table_init();
 	cpufreq_frequency_table_get_attr(freq_table, smp_processor_id());

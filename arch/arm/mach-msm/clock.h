@@ -111,12 +111,7 @@ void msm_clk_soc_init(void);
 void msm_clk_soc_set_ops(struct clk *clk);
 #else
 static inline void msm_clk_soc_init(void) { }
-static inline void msm_clk_soc_set_ops(struct clk *clk) { 
-	if (!clk->ops) {
-			clk->ops = &clk_ops_remote;
-			clk->id = clk->remote_id;
-	}
-}
+static inline void msm_clk_soc_set_ops(struct clk *clk) { }
 #endif
 
 int msm_clock_require_tcxo(unsigned long *reason, int nbits);

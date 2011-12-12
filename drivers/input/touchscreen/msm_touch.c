@@ -290,13 +290,13 @@ static irqreturn_t ts_interrupt(int irq, void *dev_id)
 		 * These x, y co-ordinates adjustments will be removed once
 		 * Android framework adds calibration framework.
 		 */
-#ifdef CONFIG_ANDROID_TOUCHSCREEN_MSM_HACKS
-		lx = ts->x_max - x;
-		ly = ts->y_max - y;
-#else
+//#ifdef CONFIG_ANDROID_TOUCHSCREEN_MSM_HACKS
+//		lx = ts->x_max - x;
+//		ly = ts->y_max - y;
+//#else
 		lx = x;
 		ly = y;
-#endif
+//#endif
 		ts_update_pen_state(ts, lx, ly, 255);
 		/* kick pen up timer - to make sure it expires again(!) */
 		mod_timer(&ts->timer,
