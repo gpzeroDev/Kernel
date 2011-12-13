@@ -48,7 +48,7 @@ static inline unsigned short from32to16(unsigned long x)
 
 static unsigned int do_csum(const unsigned char *buff, int len)
 {
-	int odd;
+	int odd, count;
 	unsigned long result = 0;
 
 	if (len <= 0)
@@ -63,22 +63,25 @@ static unsigned int do_csum(const unsigned char *buff, int len)
 		len--;
 		buff++;
 	}
-	if (len >= 2) {
+	count = len >> 1;		/* nr of 16-bit words.. */
+	if (count) {
 		if (2 & (unsigned long) buff) {
 			result += *(unsigned short *) buff;
+			count--;
 			len -= 2;
 			buff += 2;
 		}
-		if (len >= 4) {
-			const unsigned char *end = buff + ((unsigned)len & ~3);
-			unsigned int carry = 0;
+		count >>= 1;		/* nr of 32-bit words.. */
+		if (count) {
+			unsigned long carry = 0;
 			do {
-				unsigned int w = *(unsigned int *) buff;
+				unsigned long w = *(unsigned int *) buff;
+				count--;
 				buff += 4;
 				result += carry;
 				result += w;
 				carry = (w > result);
-			} while (buff < end);
+			} while (count);
 			result += carry;
 			result = (result & 0xffff) + (result >> 16);
 		}

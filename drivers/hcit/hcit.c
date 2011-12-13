@@ -127,8 +127,6 @@ extern void set_data_to_arm9(int id, char *in,int insize);
 
 static unsigned sd_boot_mode[2] = {0,0};
 
-
-
 void hcit_gpioled_ctl(unsigned long arg)
 {
     led_rpc_cmd_type led;
@@ -145,8 +143,7 @@ void hcit_gpioled_ctl(unsigned long arg)
 
     //Add rpc interface here
     oem_rpc_client_register(RPC_CHANNEL_LED);
-    set_data_to_arm9(RPC_CHANNEL_LED, &led, sizeof(led_rpc_cmd_type));
-
+    set_data_to_arm9(RPC_CHANNEL_LED, (char *)&led, sizeof(led_rpc_cmd_type));
 }
 
 static ssize_t hcit_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
