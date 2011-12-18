@@ -785,7 +785,6 @@ static int bluesleep_resume(struct platform_device *pdev)
 }
 
 static struct platform_driver bluesleep_driver = {
-	.probe = bluesleep_probe,
 	.remove = bluesleep_remove,
 	.resume	= bluesleep_resume,
 	.driver = {
@@ -805,7 +804,7 @@ static int __init bluesleep_init(void)
 
 	BT_INFO("MSM Sleep Mode Driver Ver %s", VERSION);
 
-	retval = platform_driver_register(&bluesleep_driver);
+	retval = platform_driver_probe(&bluesleep_driver, bluesleep_probe);
 	if (retval)
 		return retval;
 
@@ -878,6 +877,9 @@ static int __init bluesleep_init(void)
 	init_timer(&tx_timer);
 	tx_timer.function = bluesleep_tx_timer_expire;
 	tx_timer.data = 0;
+	
+	/* initialize host wake tasklet */
+	tasklet_init(&hostwake_task, bluesleep_hostwake_task, 0);
 
 	/* initialize host wake tasklet */
 	tasklet_init(&hostwake_task, bluesleep_hostwake_task, 0);

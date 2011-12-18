@@ -17,6 +17,8 @@ obj-$(CONFIG_ARCH_MSM_ARM11) += acpuclock.o timer.o
 obj-$(CONFIG_ARCH_MSM_SCORPION) += timer.o
 obj-$(CONFIG_ARCH_MSM_SCORPIONMP) += timer.o
 
+obj-$(CONFIG_ARCH_MSM_SCORPION) += msm_fault_handlers.o
+
 obj-$(CONFIG_MSM_VIC) += irq-vic.o
 
 ifdef CONFIG_ARCH_QSD8X50
@@ -39,6 +41,8 @@ target += smd_rpc_sym.c
 $(obj)/smd_rpc_sym.c: $(src)/smd_rpc_sym $(src)/mkrpcsym.pl
 	$(call if_changed,mkrpcsym)
 
+obj-$(CONFIG_MSM_PIL) += peripheral-reset.o
+obj-$(CONFIG_MSM_PIL) += peripheral-loader.o
 obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
 obj-$(CONFIG_MSM_FIQ_SUPPORT) += fiq_glue.o
 obj-$(CONFIG_MACH_TROUT) += board-trout-rfkill.o
@@ -48,7 +52,6 @@ obj-$(CONFIG_MSM_SMD) += smd.o smd_debug.o remote_spinlock.o socinfo.o
 ifndef CONFIG_ARCH_MSM8X60
 	obj-$(CONFIG_MSM_SMD) += nand_partitions.o pmic.o
 	obj-$(CONFIG_MSM_ONCRPCROUTER) += rpc_hsusb.o rpc_pmapp.o rpc_fsusb.o
-	obj-$(CONFIG_MSM_SMD_LOGGING) += smem_log.o
 endif
 obj-$(CONFIG_MSM_SMD_TTY) += smd_tty.o
 obj-$(CONFIG_MSM_SMD_QMI) += smd_qmi.o
@@ -64,6 +67,7 @@ obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter_clients.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter_xdr.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += rpcrouter_smd_xprt.o
 obj-$(CONFIG_MSM_RPC_SDIO_XPRT) += rpcrouter_sdio_xprt.o
+obj-$(CONFIG_MSM_SMD_LOGGING) += smem_log.o
 obj-$(CONFIG_MSM_RPC_PING) += ping_mdm_rpc_client.o
 obj-$(CONFIG_MSM_RPC_PROC_COMM_TEST) += proc_comm_test.o
 obj-$(CONFIG_MSM_RPC_PING) += ping_mdm_rpc_client.o ping_apps_server.o
@@ -105,13 +109,20 @@ obj-$(CONFIG_MACH_QSD8X50_FFA) += board-qsd8x50.o
 obj-$(CONFIG_MACH_QSD8X50A_SURF) += board-qsd8x50.o
 obj-$(CONFIG_MACH_QSD8X50A_FFA) += board-qsd8x50.o
 obj-$(CONFIG_MACH_QSD8X50A_ST1_5) += board-qsd8x50a-st1x.o
-obj-$(CONFIG_ARCH_MSM8X60) += devices-msm8x60.o clock-8x60.o acpuclock-8x60.o
-obj-$(CONFIG_ARCH_MSM8X60) += clock-rpm.o spm.o restart.o
+obj-$(CONFIG_ARCH_MSM8X60) += devices-msm8x60.o
+obj-$(CONFIG_ARCH_MSM8X60) += clock-local.o clock-8x60.o acpuclock-8x60.o
+obj-$(CONFIG_ARCH_MSM8X60) += clock-8x60_mxo.o clock-rpm.o spm.o restart.o
+obj-$(CONFIG_ARCH_MSM8X60) += subsystem-fatal-8x60.o
+obj-$(CONFIG_ARCH_MSM8X60) += saw-regulator.o
 
 ifdef CONFIG_ARCH_MSM8X60
 	obj-$(CONFIG_CPU_IDLE) += cpuidle.o
+	obj-$(CONFIG_MSM_WATCHDOG) += msm_watchdog.o
 endif
 
+ifeq ($(TARGET_BUILD_VARIANT),user)
+EXTRA_CFLAGS		+= -DVERSION_USER
+endif
 
 obj-$(CONFIG_MACH_MSM8X60_RUMI3) += board-msm8x60.o
 obj-$(CONFIG_MACH_MSM8X60_SIM) += board-msm8x60.o
@@ -126,7 +137,7 @@ else
 obj-$(CONFIG_ARCH_MSM7X27) += board-msm7x27.o devices-msm7x27.o
 endif
 obj-$(CONFIG_ARCH_MSM7X30) += board-msm7x30.o devices-msm7x30.o
-obj-$(CONFIG_ARCH_MSM7X30) += clock-7x30.o acpuclock-7x30.o
+obj-$(CONFIG_ARCH_MSM7X30) += clock-local.o clock-7x30.o acpuclock-7x30.o
 obj-$(CONFIG_ARCH_MSM7X25) += board-msm7x27.o devices-msm7x25.o
 
 obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire.o board-sapphire-gpio.o
@@ -144,13 +155,19 @@ obj-$(CONFIG_MSM_NPA) += npa.o npa_resources.o msm_pm_qos.o msm_reqs.o
 obj-$(CONFIG_MSM_NPA_REMOTE) += npa_remote.o
 obj-$(CONFIG_MSM_NPA_REMOTE_ONCRPC) += npa_remote_rpc_client.o
 obj-$(CONFIG_ARCH_MSM7X30) += spm.o
+obj-$(CONFIG_MSM_RPM) += rpm.o
+obj-$(CONFIG_MSM_RPM_LOG) += rpm_log.o
+obj-$(CONFIG_MSM_XO) += msm_xo.o
 
 obj-$(CONFIG_SMMU)		+= smmu_driver.o smmu_driver_enum.o
 obj-$(CONFIG_SMMU_8X60)		+= board-msm8x60-smmu.o
-ifdef CONFIG_GPIOLIB
-obj-$(CONFIG_MSM7200A_TLMM)	+= msm7200a-gpio.o
+obj-$(CONFIG_MSM_BUS_SCALING)	+= msm_bus_core.o
+ifdef CONFIG_MSM_V2_TLMM
+obj-y	+= tlmm-msm8660.o msm8660-gpio.o
 else
-obj-$(CONFIG_MSM7200A_TLMM)	+= gpio.o generic_gpio.o
+obj-y	+= gpio.o
 endif
-obj-$(CONFIG_MSM7200A_TLMM)	+= tlmm-msm7200a.o
-obj-$(CONFIG_MSM8660_TLMM)	+= tlmm-msm8660.o msm8660-gpio.o
+obj-$(CONFIG_ARCH_MSM7X27)	+= gpiomux.o gpiomux-7x00.o gpiomux-7x27.o
+obj-$(CONFIG_ARCH_MSM7X30)	+= gpiomux.o gpiomux-7x00.o gpiomux-7x30.o
+obj-$(CONFIG_ARCH_QSD8X50)	+= gpiomux.o gpiomux-7x00.o gpiomux-8x50.o
+obj-$(CONFIG_ARCH_MSM8X60)	+= gpiomux.o gpiomux-8x60.o

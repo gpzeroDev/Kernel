@@ -33,6 +33,7 @@
 #endif
 #include <mach/msm_iomap.h>
 #include <mach/system.h>
+#include <mach/sirc.h>
 #ifdef CONFIG_CACHE_L2X0
 #include <asm/hardware/cache-l2x0.h>
 #endif
@@ -1710,10 +1711,6 @@ static int msm_reboot_call
 			restart_reason = 0x776655EF;
    		} else if (!strcmp(cmd, "reset_rtc")) {
 			restart_reason = 0x776655F0;
-		} else if (!strncmp(cmd, "SDL1", 4)) {
-			restart_reason = 0x53444C31;    //ASCII code of "SDL1"
-		} else if (!strncmp(cmd, "SDL2", 4)) {
-			restart_reason = 0x53444C32;    //ASCII code of "SDL2"
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned code = simple_strtoul(cmd + 4, 0, 16) & 0xff;
 			restart_reason = 0x6f656d00 | code;
