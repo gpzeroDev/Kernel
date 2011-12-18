@@ -141,10 +141,7 @@ static struct device_attribute power_supply_attrs[] = {
 static ssize_t power_supply_show_static_attrs(struct device *dev,
 					      struct device_attribute *attr,
 					      char *buf) {
-	static char *type_text[] = {
-		"Battery", "UPS", "Mains", "USB",
-		"USB_DCP", "USB_CDP", "USB_ACA"
-	};
+	static char *type_text[] = { "Battery", "UPS", "Mains", "USB" };
 	struct power_supply *psy = dev_get_drvdata(dev);
 
 	return sprintf(buf, "%s\n", type_text[psy->type]);
@@ -276,7 +273,7 @@ int power_supply_uevent(struct device *dev, struct kobj_uevent_env *env)
 		attr = &power_supply_attrs[psy->properties[j]];
 
 		ret = power_supply_show_property(dev, attr, prop_buf);
-		if (ret == -ENODEV || ret == -ENODATA) {
+		if (ret == -ENODEV) {
 			/* When a battery is absent, we expect -ENODEV. Don't abort;
 			   send the uevent with at least the the PRESENT=0 property */
 			ret = 0;

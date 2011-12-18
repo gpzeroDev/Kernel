@@ -151,7 +151,7 @@ dhd_customer_gpio_wlan_ctrl(int onoff)
 #ifdef CONFIG_BOARD_PW28
 			gpio_direction_output(97,1);
 			/* Lets customer power to get stable */
-			OSL_DELAY(500);
+			OSL_DELAY(100);
 #endif
 		break;
 	}

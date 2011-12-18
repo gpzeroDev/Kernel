@@ -90,7 +90,7 @@ typedef struct wl_iw {
 	dhd_pub_t * pub;
 } wl_iw_t;
 
-#define WLC_IW_SS_CACHE_MAXLEN				512
+#define WLC_IW_SS_CACHE_MAXLEN				2048
 #define WLC_IW_SS_CACHE_CTRL_FIELD_MAXLEN	32
 #define WLC_IW_BSS_INFO_MAXLEN 				\
 	(WLC_IW_SS_CACHE_MAXLEN - WLC_IW_SS_CACHE_CTRL_FIELD_MAXLEN)
