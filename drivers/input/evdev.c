@@ -525,8 +525,7 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 	struct input_absinfo abs;
 	struct ff_effect effect;
 	int __user *ip = (int __user *)p;
-	unsigned int i, t, u, v;
-	unsigned int size;
+	int i, t, u, v;
 	int error;
 
 	switch (cmd) {
@@ -595,16 +594,8 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 			return evdev_grab(evdev, client);
 		else
 			return evdev_ungrab(evdev, client);
-        }               
-        size = _IOC_SIZE(cmd);
-#define EVIOC_MASK_SIZE(nr)	((nr) & ~(_IOC_SIZEMASK << _IOC_SIZESHIFT))
-	switch (EVIOC_MASK_SIZE(cmd)) {
 
-	case EVIOCGPROP(0):
-		return bits_to_user(dev->propbit, INPUT_PROP_MAX,
-				    size, p, compat_mode);
-        }
-//	default:
+	default:
 
 		if (_IOC_TYPE(cmd) != 'E')
 			return -EINVAL;
@@ -684,10 +675,6 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 								  sizeof(struct input_absinfo))))
 					return -EFAULT;
 
-				/* We can't change number of reserved MT slots */
-				if (t == ABS_MT_SLOT)
-					return -EINVAL;
-
 				/*
 				 * Take event lock to ensure that we are not
 				 * changing device parameters in the middle
@@ -708,7 +695,7 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 				return 0;
 			}
 		}
-//	}
+	}
 	return -EINVAL;
 }
 

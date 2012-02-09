@@ -37,19 +37,23 @@
  41: KYPD_MEMO
 */
 
-static unsigned int keypad_row_gpios[6] = {			/*SWH index(row_out, xxx_xxx)*/
+#ifdef CONFIG_BOARD_PW28
+static unsigned int keypad_row_gpios[6] = {
 	31, 32, 33, 34, 35
+#else
+static unsigned int keypad_row_gpios[] = {
+	31, 32, 33, 34, 35, 41
+#endif
 #if SCAN_FUNCTION_KEYS
 	, 42
 #endif
 };
 
-#ifdef CONFIG_P15_GPIO_KEYPAD
-static unsigned int keypad_col_gpios[3] = { 37, 40, 41 };   /*SWH index(xxx_xxx, col_in)*/
-#else
+#ifdef CONFIG_BOARD_PW28
 static unsigned int keypad_col_gpios[5] = { 36, 37, 39, 40, 41 };   /*SWH index(xxx_xxx, col_in)*/
+#else
+static unsigned int keypad_col_gpios[] = { 36, 37, 38, 39, 40 };
 #endif
-
 
 static unsigned int keypad_row_gpios_8k_ffa[] = {31, 32, 33, 34, 35, 36};
 static unsigned int keypad_col_gpios_8k_ffa[] = {38, 39, 40, 41, 42};
@@ -78,8 +82,6 @@ static const unsigned short keypad_keymap_surf[ARRAY_SIZE(keypad_col_gpios) *
 	[KEYMAP_INDEX(2, 3)] = KEY_F6,        /* R+   */
 	[KEYMAP_INDEX(2, 4)] = KEY_F7,        /* R-   */
 
-#ifndef CONFIG_P15_GPIO_KEYPAD
-
 	[KEYMAP_INDEX(3, 0)] = KEY_UP,
 	[KEYMAP_INDEX(3, 1)] = KEY_CLEAR,
 	[KEYMAP_INDEX(3, 2)] = KEY_4,
@@ -105,27 +107,57 @@ static const unsigned short keypad_keymap_surf[ARRAY_SIZE(keypad_col_gpios) *
 	[KEYMAP_INDEX(6, 3)] = KEY_F2,
 	[KEYMAP_INDEX(6, 4)] = KEY_F1
 #endif
-
-#endif //end of  CONFIG_P15_GPIO_KEYPAD
 };
 
 static const unsigned short keypad_keymap_ffa[ARRAY_SIZE(keypad_col_gpios) *
 					      ARRAY_SIZE(keypad_row_gpios)] = {
-   /*SWH*/ 
-#ifdef CONFIG_P15_GPIO_KEYPAD
-	[KEYMAP_INDEX(3, 2)] = KEY_VOLUMEUP,
-	[KEYMAP_INDEX(4, 2)] = KEY_VOLUMEDOWN,
-#else   
-	[KEYMAP_INDEX(2, 1)] = KEY_BACK,      /* B */
-	[KEYMAP_INDEX(2, 3)] = 235,                         //KEY_CAMERA,             
+#ifdef CONFIG_BOARD_PW28
+	[KEYMAP_INDEX(2, 1)] = KEY_BACK,	/* B */
+	[KEYMAP_INDEX(2, 3)] = 235,		//KEY_CAMERA,             
 
-	[KEYMAP_INDEX(3, 1)] = KEY_SEND,                //232, /* KEY_CENTER */ /* i */
+	[KEYMAP_INDEX(3, 1)] = KEY_SEND,	//232, /* KEY_CENTER */ /* i */
 	[KEYMAP_INDEX(3, 4)] = KEY_VOLUMEUP,
 
-	[KEYMAP_INDEX(4, 0)] = 230,                         //KEY_VOLUMEDOWN,
-	[KEYMAP_INDEX(4, 1)] = KEY_MENU,                //KEY_HOMEPAGE, //KEY_HOME,					//KEY_SOUND,
+	[KEYMAP_INDEX(4, 0)] = 230,		//KEY_VOLUMEDOWN,
+	[KEYMAP_INDEX(4, 1)] = KEY_MENU,	//KEY_HOMEPAGE, //KEY_HOME,					//KEY_SOUND,
 	[KEYMAP_INDEX(4, 4)] = KEY_VOLUMEDOWN,
-#endif	
+#else
+	/*[KEYMAP_INDEX(0, 0)] = ,*/
+	/*[KEYMAP_INDEX(0, 1)] = ,*/
+	[KEYMAP_INDEX(0, 2)] = KEY_1,
+	[KEYMAP_INDEX(0, 3)] = KEY_SEND,
+	[KEYMAP_INDEX(0, 4)] = KEY_LEFT,
+
+	[KEYMAP_INDEX(1, 0)] = KEY_3,
+	[KEYMAP_INDEX(1, 1)] = KEY_RIGHT,
+	[KEYMAP_INDEX(1, 2)] = KEY_VOLUMEUP,
+	/*[KEYMAP_INDEX(1, 3)] = ,*/
+	[KEYMAP_INDEX(1, 4)] = KEY_6,
+
+	[KEYMAP_INDEX(2, 0)] = KEY_HOME,      /* A */
+	[KEYMAP_INDEX(2, 1)] = KEY_BACK,      /* B */
+	[KEYMAP_INDEX(2, 2)] = KEY_0,
+	[KEYMAP_INDEX(2, 3)] = 228,           /* KEY_SHARP */
+	[KEYMAP_INDEX(2, 4)] = KEY_9,
+
+	[KEYMAP_INDEX(3, 0)] = KEY_UP,
+	[KEYMAP_INDEX(3, 1)] = 232, /* KEY_CENTER */ /* i */
+	[KEYMAP_INDEX(3, 2)] = KEY_4,
+	/*[KEYMAP_INDEX(3, 3)] = ,*/
+	[KEYMAP_INDEX(3, 4)] = KEY_2,
+
+	[KEYMAP_INDEX(4, 0)] = KEY_VOLUMEDOWN,
+	[KEYMAP_INDEX(4, 1)] = KEY_SOUND,
+	[KEYMAP_INDEX(4, 2)] = KEY_DOWN,
+	[KEYMAP_INDEX(4, 3)] = KEY_8,
+	[KEYMAP_INDEX(4, 4)] = KEY_5,
+
+	/*[KEYMAP_INDEX(5, 0)] = ,*/
+	[KEYMAP_INDEX(5, 1)] = 227,           /* KEY_STAR */
+	[KEYMAP_INDEX(5, 2)] = 230, /*SOFT2*/ /* 2 */
+	[KEYMAP_INDEX(5, 3)] = KEY_MENU,      /* 1 */
+	[KEYMAP_INDEX(5, 4)] = KEY_7,
+#endif
 };
 
 #define QSD8x50_FFA_KEYMAP_SIZE (ARRAY_SIZE(keypad_col_gpios_8k_ffa) * \
@@ -248,6 +280,7 @@ static struct gpio_event_matrix_info keypad_matrix_info_7k_ffa = {
 			  GPIOKPF_PRINT_UNMAPPED_KEYS
 };
 
+#ifdef CONFIG_BOARD_PW28
 /*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 #define GPIO_HEADSET_KEY        92      /*SWH*/
 
@@ -277,10 +310,13 @@ static struct gpio_event_input_info headset_key_input_info = {
 	.keymap_size = ARRAY_SIZE(headset_key_map)
 };
 /*------------------------------------------------------------------*/
+#endif
 
 static struct gpio_event_info *keypad_info_7k_ffa[] = {
 	&keypad_matrix_info_7k_ffa.info,
+#ifdef CONFIG_BOARD_PW28
 	&headset_key_input_info.info, /*SWH*/
+#endif
 };
 
 static struct gpio_event_platform_data keypad_data_7k_ffa = {

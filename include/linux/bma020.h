@@ -136,4 +136,3 @@ union Data16bit{
 #define BMA020CAL_MAX_OFFSET	64
 
 #endif
-

@@ -652,7 +652,7 @@ static int msm_otg_suspend(struct msm_otg *dev)
 	 * LPM when wall charger is connected, we will not detect charger
 	 * disconnection.
 	 */
-	if (chg_type == USB_CHG_TYPE__WALLCHARGER || !dev->pmic_notif_supp)
+//	if (chg_type == USB_CHG_TYPE__WALLCHARGER || !dev->pmic_notif_supp)
 		ulpi_write(dev, 0x01, 0x30);
 	ulpi_write(dev, 0x08, 0x09);/* turn off PLL on integrated phy */
 

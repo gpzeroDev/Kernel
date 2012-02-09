@@ -7,7 +7,7 @@
 #include <linux/delay.h>
 
 #include <linux/i2c.h>
-#include <mach/bma020.h>
+#include <linux/bma020.h>
 
 static struct i2c_client *this_client;
 

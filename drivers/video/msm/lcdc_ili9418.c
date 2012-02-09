@@ -79,7 +79,7 @@ struct ili9325sim_state_type{
 
 static struct ili9325sim_state_type ili9325sim_state = { 0 };
 static struct msm_panel_common_pdata *lcdc_ili9325sim_pdata;
-int lcdc_ili9325sim_panel_on(struct platform_device *pdev);
+static int lcdc_ili9325sim_panel_on(struct platform_device *pdev);
 
 
 /*===========================================================================
@@ -332,7 +332,7 @@ static void ili9325sim_disp_on(void)
 	}
 }
 
-int lcdc_ili9325sim_panel_on(struct platform_device *pdev)
+static int lcdc_ili9325sim_panel_on(struct platform_device *pdev)
 {
 	if (!ili9325sim_state.disp_initialized) {
 		/* Configure reset GPIO that drives DAC */
@@ -380,7 +380,7 @@ static void lcdc_ili9325sim_set_backlight(struct msm_fb_data_type *mfd)
 	}
 }
 
-static int __init ili9325sim_probe(struct platform_device *pdev)
+static int __devinit ili9325sim_probe(struct platform_device *pdev)
 {	
 	if (pdev->id == 0) {
 		lcdc_ili9325sim_pdata = pdev->dev.platform_data;

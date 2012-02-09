@@ -37,6 +37,7 @@
 #include "mmc_ops.h"
 #include "sd_ops.h"
 #include "sdio_ops.h"
+#include <linux/pm.h>
 
 static struct workqueue_struct *workqueue;
 static struct wake_lock mmc_delayed_work_wake_lock;
@@ -223,7 +224,7 @@ void mmc_wait_for_req(struct mmc_host *host, struct mmc_request *mrq)
 
 	mmc_start_request(host, mrq);
 
-	wait_for_completion_io(&complete);
+	wait_for_completion(&complete);
 }
 
 EXPORT_SYMBOL(mmc_wait_for_req);
@@ -481,6 +482,14 @@ int __mmc_claim_host(struct mmc_host *host, atomic_t *abort)
 	might_sleep();
 
 	add_wait_queue(&host->wq, &wait);
+#ifdef CONFIG_PM_RUNTIME
+	while (mmc_dev(host)->power.runtime_status == RPM_SUSPENDING) {
+		if (host->suspend_task == current)
+			break;
+		msleep(15);
+	}
+#endif
+
 	spin_lock_irqsave(&host->lock, flags);
 	while (1) {
 		set_current_state(TASK_UNINTERRUPTIBLE);
@@ -530,13 +539,6 @@ int mmc_try_claim_host(struct mmc_host *host)
 }
 EXPORT_SYMBOL(mmc_try_claim_host);
 
-/**
- *     mmc_do_release_host - release a claimed host
- *     @host: mmc host to release
- *
- *     If you successfully claimed a host, this function will
- *     release it again.
- */
 void mmc_do_release_host(struct mmc_host *host)
 {
 	unsigned long flags;
@@ -1005,7 +1007,7 @@ int mmc_resume_bus(struct mmc_host *host)
 		host->bus_ops->resume(host);
 	}
 
-	if (host->bus_ops && host->bus_ops->detect && !host->bus_dead)
+	if (host->bus_ops->detect && !host->bus_dead)
 		host->bus_ops->detect(host);
 
 	mmc_bus_put(host);

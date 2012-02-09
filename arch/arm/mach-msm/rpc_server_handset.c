@@ -26,9 +26,9 @@
 #include <mach/msm_rpcrouter.h>
 #include <mach/board.h>
 #include <mach/rpc_server_handset.h>
+#ifdef CONFIG_BOARD_PW28
 #include <mach/qdsp5/snd_adie.h>
-
-#include <linux/wakelock.h>
+#endif
 
 #define DRIVER_NAME	"msm-handset"
 
@@ -53,13 +53,22 @@
 #define HS_HEADSET_SWITCH_K	0x84
 #define HS_HEADSET_SWITCH_2_K	0xF0
 #define HS_HEADSET_SWITCH_3_K	0xF1
+#ifndef CONFIG_BOARD_PW28
+#define HS_HEADSET_HEADPHONE_K	0xF6
+#define HS_HEADSET_MICROPHONE_K 0xF7
+#endif
 #define HS_REL_K		0xFF	/* key release */
+
+#ifndef BOARD_CONFIG_PW28
+#define SW_HEADPHONE_INSERT_W_MIC 1 /* HS with mic */
+#endif
 
 #define KEY(hs_key, input_key) ((hs_key << 24) | input_key)
 
-#ifdef CONFIG_USE_OLD_BATT_PAUSE		
-	extern volatile int key_for_charger;
+#ifdef CONFIG_BOARD_PW28
+extern volatile int key_for_charger;
 #endif
+
 enum hs_event {
 	HS_EVNT_EXT_PWR = 0,	/* External Power status        */
 	HS_EVNT_HSD,		/* Headset Detection            */
@@ -186,8 +195,15 @@ struct hs_cmd_data_type {
 
 static const uint32_t hs_key_map[] = {
 	KEY(HS_PWR_K, KEY_POWER),
+#ifdef CONFIG_BOARD_PW28
 	KEY(HS_END_K, KEY_POWER),/*SWH*///DISABLE ENDCALL
 	KEY(HS_STEREO_HEADSET_K, SW_HEADPHONE_INSERT),
+#else
+	KEY(HS_END_K, KEY_END),
+	KEY(HS_STEREO_HEADSET_K, SW_HEADPHONE_INSERT_W_MIC),
+	KEY(HS_HEADSET_HEADPHONE_K, SW_HEADPHONE_INSERT),
+	KEY(HS_HEADSET_MICROPHONE_K, SW_MICROPHONE_INSERT),
+#endif
 	KEY(HS_HEADSET_SWITCH_K, KEY_MEDIA),
 	KEY(HS_HEADSET_SWITCH_2_K, KEY_VOLUMEUP),
 	KEY(HS_HEADSET_SWITCH_3_K, KEY_VOLUMEDOWN),
@@ -219,15 +235,19 @@ struct msm_handset {
 	struct input_dev *ipdev;
 	struct switch_dev sdev;
 	struct msm_handset_platform_data *hs_pdata;
+#ifndef CONFIG_BOARD_PW28
+	bool mic_on, hs_on;
+#else
     struct hrtimer hs_key_timer;
     atomic_t hs_key_enabled;
+#endif
 };
 
+#ifdef CONFIG_BOARD_PW28
 static int adie_svc_id = -1;
+#endif
 static struct msm_rpc_client *rpc_client;
 static struct msm_handset *hs;
-
-struct wake_lock hs_wake_lock;
 
 static int hs_find_key(uint32_t hscode)
 {
@@ -242,15 +262,11 @@ static int hs_find_key(uint32_t hscode)
 	return -1;
 }
 
+#ifdef CONFIG_BOARD_PW28
 static void
 report_headset_switch(struct input_dev *dev, int key, int value)
 {
 	struct msm_handset *hs = input_get_drvdata(dev);
-	
-	if (value)
-	    wake_lock(&hs_wake_lock);
-	else
-	    wake_unlock(&hs_wake_lock);
 
 	input_report_switch(dev, key, value);
 	switch_set_state(&hs->sdev, value);
@@ -263,6 +279,23 @@ report_headset_switch(struct input_dev *dev, int key, int value)
         hrtimer_start(&hs->hs_key_timer, ktime_set(2, 0), HRTIMER_MODE_REL);
     }
 }
+#else
+static void update_state(void)
+{
+	int state;
+
+	if (hs->mic_on && hs->hs_on)
+		state = 1 << 0;
+	else if (hs->hs_on)
+		state = 1 << 1;
+	else if (hs->mic_on)
+		state = 1 << 2;
+	else
+		state = 0;
+
+	switch_set_state(&hs->sdev, state);
+}
+#endif
 
 /*
  * tuple format: (key_code, key_param)
@@ -279,8 +312,6 @@ static void report_hs_key(uint32_t key_code, uint32_t key_parm)
 {
 	int key, temp_key_code;
 
-	printk(KERN_ERR "[keypad] report_hs_key(%ld, %ld) Enter \n",key_code, key_parm);
-
 	if (key_code == HS_REL_K)
 		key = hs_find_key(key_parm);
 	else
@@ -294,26 +325,51 @@ static void report_hs_key(uint32_t key_code, uint32_t key_parm)
 	switch (key) {
 	case KEY_POWER:
 	case KEY_END:
+#ifdef CONFIG_BOARD_PW28
 		printk(KERN_ERR "%s:  remote handset event %d\n",__func__, key);
-#ifdef CONFIG_USE_OLD_BATT_PAUSE		
 		key_for_charger = KEY_END;//For power off charging
+#endif
+#ifndef CONFIG_BOARD_PW28
+	case KEY_MEDIA:
 #endif
 	case KEY_VOLUMEUP:
 	case KEY_VOLUMEDOWN:
 		input_report_key(hs->ipdev, key, (key_code != HS_REL_K));
 		break;
+#ifdef CONFIG_BOARD_PW28
 	case SW_HEADPHONE_INSERT:
 		report_headset_switch(hs->ipdev, key, (key_code != HS_REL_K));
 		break;
+#else
+	case SW_HEADPHONE_INSERT_W_MIC:
+		hs->mic_on = hs->hs_on = (key_code != HS_REL_K) ? 1 : 0;
+		input_report_switch(hs->ipdev, SW_HEADPHONE_INSERT,
+							hs->hs_on);
+		input_report_switch(hs->ipdev, SW_MICROPHONE_INSERT,
+							hs->mic_on);
+		update_state();
+		break;
+
+	case SW_HEADPHONE_INSERT:
+		hs->hs_on = (key_code != HS_REL_K) ? 1 : 0;
+		input_report_switch(hs->ipdev, key, hs->hs_on);
+		update_state();
+		break;
+	case SW_MICROPHONE_INSERT:
+		hs->mic_on = (key_code != HS_REL_K) ? 1 : 0;
+		input_report_switch(hs->ipdev, key, hs->mic_on);
+		update_state();
+		break;
+#endif
 	case -1:
 		printk(KERN_ERR "%s: No mapping for remote handset event %d\n",
 				 __func__, temp_key_code);
+#ifdef CONFIG_BOARD_PW28
 	case KEY_MEDIA:
+#endif
 		return;
 	}
 	input_sync(hs->ipdev);
-
-	printk(KERN_ERR "[keypad] report_hs_key() Exit key<%d>\n",key);
 }
 
 static int handle_hs_rpc_call(struct msm_rpc_server *server,
@@ -568,26 +624,24 @@ err_client_req:
 static int __devinit hs_rpc_init(void)
 {
 	int rc;
-	
-	wake_lock_init(&hs_wake_lock, WAKE_LOCK_SUSPEND, "hs_wake_lock");
 
 	rc = hs_rpc_cb_init();
 	if (rc) {
-		pr_err("%s: failed to initialize rpc client\n", __func__);
-		return rc;
-	}
+		pr_err("%s: failed to initialize rpc client, try server...\n",
+						__func__);
 
-	rc = msm_rpc_create_server(&hs_rpc_server);
-	if (rc)
-		pr_err("%s: failed to create rpc server\n", __func__);
+		rc = msm_rpc_create_server(&hs_rpc_server);
+		if (rc) {
+			pr_err("%s: failed to create rpc server\n", __func__);
+			return rc;
+		}
+	}
 
 	return rc;
 }
 
 static void __devexit hs_rpc_deinit(void)
 {
-	wake_lock_destroy(&hs_wake_lock);
-	
 	if (rpc_client)
 		msm_rpc_unregister_client(rpc_client);
 }
@@ -603,6 +657,7 @@ static ssize_t msm_headset_print_name(struct switch_dev *sdev, char *buf)
 	return -EINVAL;
 }
 
+#ifdef CONFIG_BOARD_PW28
 static enum hrtimer_restart hs_key_timer(struct hrtimer *timer)
 {
     printk("hs_key_timer\n");
@@ -619,6 +674,7 @@ bool hs_is_key_enabled(void)
     return is_enabled;
 }
 EXPORT_SYMBOL_GPL(hs_is_key_enabled);
+#endif
 
 static int __devinit hs_probe(struct platform_device *pdev)
 {
@@ -660,7 +716,10 @@ static int __devinit hs_probe(struct platform_device *pdev)
 	input_set_capability(ipdev, EV_KEY, KEY_MEDIA);
 	input_set_capability(ipdev, EV_KEY, KEY_VOLUMEUP);
 	input_set_capability(ipdev, EV_KEY, KEY_VOLUMEDOWN);
-	//input_set_capability(ipdev, EV_SW, SW_HEADPHONE_INSERT);
+#ifndef CONFIG_BOARD_PW28
+	input_set_capability(ipdev, EV_SW, SW_HEADPHONE_INSERT);
+	input_set_capability(ipdev, EV_SW, SW_MICROPHONE_INSERT);
+#endif
 	input_set_capability(ipdev, EV_KEY, KEY_POWER);
 	input_set_capability(ipdev, EV_KEY, KEY_END);
 
@@ -673,6 +732,7 @@ static int __devinit hs_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, hs);
 
+#ifdef CONFIG_BOARD_PW28
     if (-1 == adie_svc_id)
         adie_svc_id = adie_svc_get();
     
@@ -680,6 +740,7 @@ static int __devinit hs_probe(struct platform_device *pdev)
     hrtimer_init(&hs->hs_key_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
     hs->hs_key_timer.function = hs_key_timer;
     
+#endif
 	rc = hs_rpc_init();
 	if (rc) {
 		dev_err(&ipdev->dev, "rpc init failure\n");
@@ -704,11 +765,13 @@ static int __devexit hs_remove(struct platform_device *pdev)
 {
 	struct msm_handset *hs = platform_get_drvdata(pdev);
 
+#ifdef CONFIG_BOARD_PW28
     if (-1 != adie_svc_id) {
         adie_svc_put(adie_svc_id);
         adie_svc_id = -1;
     }
     
+#endif
 	input_unregister_device(hs->ipdev);
 	switch_dev_unregister(&hs->sdev);
 	kfree(hs);

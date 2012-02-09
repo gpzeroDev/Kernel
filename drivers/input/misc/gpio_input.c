@@ -51,11 +51,8 @@ struct gpio_input_state {
 static enum hrtimer_restart gpio_event_input_timer_func(struct hrtimer *timer)
 {
 	int i;
-	int trap;
 	int pressed;
-    unsigned int type, code;
-	struct gpio_input_state *ds =
-		container_of(timer, struct gpio_input_state, timer);
+	struct gpio_input_state *ds = container_of(timer, struct gpio_input_state, timer);
 	unsigned gpio_flags = ds->info->flags;
 	unsigned npolarity;
 	int nkeys = ds->info->keymap_size;
@@ -63,14 +60,10 @@ static enum hrtimer_restart gpio_event_input_timer_func(struct hrtimer *timer)
 	struct gpio_key_state *key_state;
 	unsigned long irqflags;
 	uint8_t debounce;
-
-#if 0
-	key_entry = kp->keys_info->keymap;
-	key_state = kp->key_state;
-	for (i = 0; i < nkeys; i++, key_entry++, key_state++)
-		pr_info("gpio_read_detect_status %d %d\n", key_entry->gpio,
-			gpio_read_detect_status(key_entry->gpio));
+#ifdef CONFIG_BOARD_PW28
+	unsigned int type, code;
 #endif
+
 	key_entry = ds->info->keymap;
 	key_state = ds->key_state;
 	spin_lock_irqsave(&ds->irq_lock, irqflags);
@@ -128,19 +121,19 @@ static enum hrtimer_restart gpio_event_input_timer_func(struct hrtimer *timer)
 			pr_info("gpio_keys_scan_keys: key %x-%x, %d (%d) "
 				"changed to %d\n", ds->info->type,
 				key_entry->code, i, key_entry->gpio, pressed);
-        
-		trap = 0;
-        	type = ds->info->type; 
-        	code = key_entry->code;
+#ifdef CONFIG_BOARD_PW28
+       		type = ds->info->type; 
+       		code = key_entry->code;
         	if (ds->info->info.filter) {
-            		trap = ds->info->info.filter(ds->input_devs, ds->info, ds, key_entry->dev,
-                			&type, &code, &pressed);
-        	}
-        	pr_err("[keypad] gpio_event_input_timer_func() type<%d> code<%d> pressed<%d>\n", type, code, pressed);
-		if (!trap) {
-			input_event(ds->input_devs->dev[key_entry->dev], type,
-					code, pressed);
+            		ds->info->info.filter(ds->input_devs, (struct gpio_event_info *)ds->info, ds, key_entry->dev,
+                		&type, &code, &pressed);
 		}
+		input_event(ds->input_devs->dev[key_entry->dev], type,
+			code, pressed);
+#else
+		input_event(ds->input_devs->dev[key_entry->dev], ds->info->type,
+			    key_entry->code, pressed);
+#endif
 	}
 
 #if 0
@@ -172,7 +165,9 @@ static irqreturn_t gpio_event_input_irq_handler(int irq, void *dev_id)
 	const struct gpio_event_direct_entry *key_entry;
 	unsigned long irqflags;
 	int pressed;
-    unsigned int type, code;
+#ifdef CONFIG_BOARD_PW28
+	unsigned int type, code;
+#endif
 
 	if (!ds->use_irq)
 		return IRQ_HANDLED;
@@ -207,15 +202,19 @@ static irqreturn_t gpio_event_input_irq_handler(int irq, void *dev_id)
 				"(%d) changed to %d\n",
 				ds->info->type, key_entry->code, keymap_index,
 				key_entry->gpio, pressed);
-        	type = ds->info->type; 
-        	code = key_entry->code;
+#ifdef CONFIG_BOARD_PW28
+       		type = ds->info->type; 
+       		code = key_entry->code;
         	if (ds->info->info.filter) {
-            		if (ds->info->info.filter(ds->input_devs, ds->info, ds, key_entry->dev,
-            			&type, &code, &pressed))
-			return IRQ_HANDLED;
-        	}
+            		ds->info->info.filter(ds->input_devs, (struct gpio_event_info *)ds->info, ds, key_entry->dev,
+                		&type, &code, &pressed);
+		}
 		input_event(ds->input_devs->dev[key_entry->dev], type,
-			    code, pressed);
+			code, pressed);
+#else
+		input_event(ds->input_devs->dev[key_entry->dev], ds->info->type,
+			    key_entry->code, pressed);
+#endif
 	}
 	return IRQ_HANDLED;
 }
@@ -371,4 +370,6 @@ err_bad_keymap:
 err_ds_alloc_failed:
 	return ret;
 }
+#ifdef CONFIG_BOARD_PW28
 EXPORT_SYMBOL(gpio_event_input_func);
+#endif

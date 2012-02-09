@@ -46,6 +46,10 @@
 #include <linux/uaccess.h>
 #include <linux/wakelock.h>
 
+#ifdef CONFIG_BOARD_PW28
+extern void update_usb_to_gui(int i);
+#endif
+
 static const char driver_name[] = "msm72k_udc";
 
 /* #define DEBUG */
@@ -143,8 +147,8 @@ static void usb_do_remote_wakeup(struct work_struct *w);
 
 #define USB_CHG_DET_DELAY	msecs_to_jiffies(1000)
 #define REMOTE_WAKEUP_DELAY	msecs_to_jiffies(1000)
-#define PHY_STATUS_CHECK_DELAY (jiffies + msecs_to_jiffies(1000))
-extern void update_usb_to_gui(int i);
+#define PHY_STATUS_CHECK_DELAY	(jiffies + msecs_to_jiffies(1000))
+
 struct usb_info {
 	/* lock for register/queue/device state changes */
 	spinlock_t lock;
@@ -277,24 +281,29 @@ static ssize_t print_switch_state(struct switch_dev *sdev, char *buf)
 {
 	return sprintf(buf, "%s\n", sdev->state ? "online" : "offline");
 }
-#define USB_CHARGER_MASK 0x0200
-#define WALL_CHARGER_MASK 0x0800
-#define USB_WALL_CHARGER_MASK 0x0c00
+
 static inline enum chg_type usb_get_chg_type(struct usb_info *ui)
 {
+#ifdef CONFIG_BOARD_PW28
 	if ((readl(USB_PORTSC) & PORTSC_LS) == PORTSC_LS)
 	{
-		update_usb_to_gui(3);
+		update_usb_to_gui(3);	// CHARGER_TYPE_USB_WALL
 		return USB_CHG_TYPE__WALLCHARGER;
 	}
 	else
 	{
-		update_usb_to_gui(2);
+		update_usb_to_gui(2);	// CHARGER_TYPE_USB_PC
 		return USB_CHG_TYPE__SDP;
 	}
+#else
+	if ((readl(USB_PORTSC) & PORTSC_LS) == PORTSC_LS)
+		return USB_CHG_TYPE__WALLCHARGER;
+	else
+		return USB_CHG_TYPE__SDP;
+#endif
 }
 
-#define USB_WALLCHARGER_CHG_CURRENT 700
+#define USB_WALLCHARGER_CHG_CURRENT 1800
 static int usb_get_max_power(struct usb_info *ui)
 {
 	struct msm_otg *otg = to_msm_otg(ui->xceiv);
@@ -2648,7 +2657,7 @@ static struct dev_pm_ops msm72k_udc_dev_pm_ops = {
 static struct platform_driver usb_driver = {
 	.probe = msm72k_probe,
 	.driver = { .name = "msm_hsusb",
-	.pm = &msm72k_udc_dev_pm_ops, },
+		    .pm = &msm72k_udc_dev_pm_ops, },
 };
 
 static int __init init(void)

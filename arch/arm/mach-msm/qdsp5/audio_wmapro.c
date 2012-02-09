@@ -4,7 +4,7 @@
  *
  * Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2009-2010, Code Aurora Forum. All rights reserved.
  *
  * All source code in this file is licensed under the following license except
  * where indicated.
@@ -51,7 +51,7 @@
 #include <mach/debug_mm.h>
 
 /* Size must be power of 2 */
-#define BUFSZ_MAX 	4110	/* Includes meta in size */
+#define BUFSZ_MAX 	8206	/* Includes meta in size */
 #define BUFSZ_MIN 	2062	/* Includes meta in size */
 #define DMASZ_MAX 	(BUFSZ_MAX * 2)
 #define DMASZ_MIN 	(BUFSZ_MIN * 2)
@@ -187,8 +187,10 @@ static void audplay_send_data(struct audio *audio, unsigned needed);
 static void audplay_config_hostpcm(struct audio *audio);
 static void audplay_buffer_refresh(struct audio *audio);
 static void audio_dsp_event(void *private, unsigned id, uint16_t *msg);
+#ifdef CONFIG_HAS_EARLYSUSPEND
 static void audwmapro_post_event(struct audio *audio, int type,
 		union msm_audio_event_payload payload);
+#endif
 
 /* must be called with audio->lock held */
 static int audio_enable(struct audio *audio)
@@ -1408,6 +1410,7 @@ static int audio_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
 static void audwmapro_post_event(struct audio *audio, int type,
 		union msm_audio_event_payload payload)
 {
@@ -1424,6 +1427,7 @@ static void audwmapro_post_event(struct audio *audio, int type,
 		e_node = kmalloc(sizeof(struct audwmapro_event), GFP_ATOMIC);
 		if (!e_node) {
 			MM_ERR("No mem to post event %d\n", type);
+			spin_unlock_irqrestore(&audio->event_queue_lock, flags);
 			return;
 		}
 	}
@@ -1436,7 +1440,6 @@ static void audwmapro_post_event(struct audio *audio, int type,
 	wake_up(&audio->event_wait);
 }
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
 static void audwmapro_suspend(struct early_suspend *h)
 {
 	struct audwmapro_suspend_ctl *ctl =

@@ -29,27 +29,38 @@
 #include <mach/board.h>
 #include <mach/msm_rpcrouter.h>
 #include <mach/debug_mm.h>
+#ifdef CONFIG_BOARD_PW28
 #include <mach/qdsp5/snd_adie.h>
 #include "audmgr.h"
+#endif
 
 struct snd_ctxt {
 	struct mutex lock;
 	int opened;
 	struct msm_rpc_endpoint *ept;
 	struct msm_snd_endpoints *snd_epts;
+#ifdef CONFIG_BOARD_PW28
 	struct audmgr audmgr;
+#endif
 };
 
 struct snd_sys_ctxt {
 	struct mutex lock;
+#ifdef CONFIG_BOARD_PW28
 	int opened;
+#endif
 	struct msm_rpc_endpoint *ept;
+#ifdef CONFIG_BOARD_PW28
     int adie_client;
+#endif
 };
-
+#ifdef CONFIG_BOARD_PW28
 static struct snd_sys_ctxt the_snd_sys = {
     .adie_client = -1,
 };
+#else
+static struct snd_sys_ctxt the_snd_sys;
+#endif
 
 static struct snd_ctxt the_snd;
 
@@ -62,7 +73,9 @@ static struct snd_ctxt the_snd;
 #define SND_SET_VOLUME_PROC 3
 #define SND_AVC_CTL_PROC 29
 #define SND_AGC_CTL_PROC 30
+#ifdef CONFIG_BOARD_PW28
 #define SND_ACM_DIAG_REQ_PROC 37
+#endif
 
 struct rpc_snd_set_device_args {
 	uint32_t device;
@@ -151,6 +164,7 @@ static int get_endpoint(struct snd_ctxt *snd, unsigned long arg)
 	return rc;
 }
 
+#ifdef CONFIG_BOARD_PW28
 struct acm_cmd_struct_header
 {
   uint16_t cmd_id; /**< a value from acm_cmd_code_enum*/
@@ -261,6 +275,7 @@ static int req_acm_diag_pkg(
     kfree(req_msg_ptr);
     return rc;
 }
+#endif
 
 static long snd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
@@ -268,20 +283,27 @@ static long snd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct snd_set_volume_msg vmsg;
 	struct snd_avc_ctl_msg avc_msg;
 	struct snd_agc_ctl_msg agc_msg;
+#ifdef CONFIG_BOARD_PW28
 	struct audmgr_config audmgr_cfg;
+#endif
 
 	struct msm_snd_device_config dev;
 	struct msm_snd_volume_config vol;
+#ifdef CONFIG_BOARD_PW28
     struct acm_diag_req acm_diag_req;
     struct acm_diag_pkg *acm_req_pkg;
+#endif
 	struct snd_ctxt *snd = file->private_data;
+#ifdef CONFIG_BOARD_PW28
 	struct snd_sys_ctxt *snd_sys = &the_snd_sys;
+#endif
 	int rc = 0;
 
 	uint32_t avc, agc;
 
 	mutex_lock(&snd->lock);
 	switch (cmd) {
+#ifdef CONFIG_BOARD_PW28
     case AUDIO_ENABLE_SND_DEVICE:
 		MM_INFO("AUDIO_ENABLE_SND_DEVICE\n");
     	/* Codec / method configure to audmgr client */
@@ -296,6 +318,7 @@ static long snd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		MM_INFO("AUDIO_DISABLE_SND_DEVICE\n");
 		rc = audmgr_disable(&snd->audmgr);
         break;
+#endif
 	case SND_SET_DEVICE:
 		if (copy_from_user(&dev, (void __user *) arg, sizeof(dev))) {
 			MM_ERR("set device: invalid pointer\n");
@@ -400,6 +423,7 @@ static long snd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case SND_GET_ENDPOINT:
 		rc = get_endpoint(snd, arg);
 		break;
+#ifdef CONFIG_BOARD_PW28
 
     case AUDIO_SET_AUX_PGA_GAIN:
 		rc = adie_svc_config_adie_block(snd_sys->adie_client, AUX_PGA_GAIN, arg);
@@ -446,6 +470,7 @@ static long snd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         } while (0);
         kfree(acm_req_pkg);
         break;
+#endif
 	default:
 		MM_ERR("unknown command\n");
 		rc = -EINVAL;
@@ -462,8 +487,10 @@ static int snd_release(struct inode *inode, struct file *file)
 	int rc;
 
 	mutex_lock(&snd->lock);
+#ifdef CONFIG_BOARD_PW28
 	audmgr_disable(&snd->audmgr);
 	audmgr_close(&snd->audmgr);    
+#endif
 	rc = msm_rpc_close(snd->ept);
 	if (rc < 0)
 		MM_ERR("msm_rpc_close failed\n");
@@ -482,14 +509,18 @@ static int snd_sys_release(void)
 	if (rc < 0)
 		MM_ERR("msm_rpc_close failed\n");
 	snd_sys->ept = NULL;
+#ifdef CONFIG_BOARD_PW28
     snd_sys->opened = 0;
+#endif
 	mutex_unlock(&snd_sys->lock);
 	return rc;
 }
 static int snd_open(struct inode *inode, struct file *file)
 {
 	struct snd_ctxt *snd = &the_snd;
+#ifdef CONFIG_BOARD_PW28
 	struct snd_sys_ctxt *snd_sys = &the_snd_sys;
+#endif
 	int rc = 0;
 
 	mutex_lock(&snd->lock);
@@ -505,6 +536,7 @@ static int snd_open(struct inode *inode, struct file *file)
 			}
 		}
 
+#ifdef CONFIG_BOARD_PW28
     	rc = audmgr_open(&snd->audmgr);
         if (rc < 0) { 
     		MM_ERR("failed to open audmgr\n");
@@ -520,6 +552,7 @@ static int snd_open(struct inode *inode, struct file *file)
         	}
         }
         
+#endif
 		file->private_data = snd;
 		snd->opened = 1;
 	} else {
@@ -537,7 +570,11 @@ static int snd_sys_open(void)
 	int rc = 0;
 
 	mutex_lock(&snd_sys->lock);
+#ifdef CONFIG_BOARD_PW28
 	if (!snd_sys->opened) {
+#else
+	if (snd_sys->ept == NULL) {
+#endif
 		snd_sys->ept = msm_rpc_connect_compatible(RPC_SND_PROG,
 			RPC_SND_VERS, 0);
 		if (IS_ERR(snd_sys->ept)) {
@@ -546,7 +583,9 @@ static int snd_sys_open(void)
 			MM_ERR("failed to connect snd svc\n");
 			goto err;
 		}
+#ifdef CONFIG_BOARD_PW28
         snd_sys->opened = 1;
+#endif
 	} else
 		MM_DBG("snd already opened\n");
 
@@ -782,6 +821,7 @@ static ssize_t snd_vol_store(struct device *dev,
 	return status ? : size;
 }
 
+#ifdef CONFIG_BOARD_PW28
 static long snd_aux_pga_gain(const char *arg)
 {
 	struct snd_sys_ctxt *snd_sys = &the_snd_sys;
@@ -823,6 +863,7 @@ static ssize_t snd_aux_pga_store(struct device *dev,
 
 	return status ? : size;
 }
+#endif
 
 static DEVICE_ATTR(agc, S_IWUSR | S_IRUGO,
 		NULL, snd_agc_store);
@@ -836,8 +877,10 @@ static DEVICE_ATTR(device, S_IWUSR | S_IRUGO,
 static DEVICE_ATTR(volume, S_IWUSR | S_IRUGO,
 		NULL, snd_vol_store);
 
+#ifdef CONFIG_BOARD_PW28
 static DEVICE_ATTR(aux_pga, S_IWUSR | S_IRUGO,
 		NULL, snd_aux_pga_store);
+#endif
 
 static int snd_probe(struct platform_device *pdev)
 {
@@ -886,9 +929,11 @@ static int snd_probe(struct platform_device *pdev)
 		device_remove_file(snd_misc.this_device,
 						&dev_attr_device);
 		misc_deregister(&snd_misc);
+#ifdef CONFIG_BOARD_PW28
 		return rc;
-    }
-    
+#endif
+	}
+#ifdef CONFIG_BOARD_PW28
 	rc = device_create_file(snd_misc.this_device, &dev_attr_aux_pga);
 	if (rc) {
 		device_remove_file(snd_misc.this_device,
@@ -901,7 +946,7 @@ static int snd_probe(struct platform_device *pdev)
 						&dev_attr_volume);
 		misc_deregister(&snd_misc);
 	}
-
+#endif
 	return rc;
 }
 

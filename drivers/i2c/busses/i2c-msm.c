@@ -97,7 +97,6 @@ static void
 msm_i2c_pwr_mgmt(struct msm_i2c_dev *dev, unsigned int state)
 {
 	dev->clk_state = state;
-
 	if (state != 0)
 		clk_enable(dev->clk);
 	else

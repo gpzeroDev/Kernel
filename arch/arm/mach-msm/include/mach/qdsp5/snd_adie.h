@@ -55,7 +55,9 @@ enum adie_block_enum_type{
 	MIC_BIAS,
 	HSSD,
 	HPH_PA,
+#ifdef CONFIG_BOARD_PW28
 	AUX_PGA_GAIN,
+#endif
 };
 
 enum adie_config_enum_type{
@@ -99,5 +101,5 @@ struct adie_svc_config_adie_block_cb_args {
 int adie_svc_get(void);
 int adie_svc_put(int id);
 int adie_svc_config_adie_block(int id,
-	enum adie_block_enum_type adie_block_type, int value);
+enum adie_block_enum_type adie_block_type, int value);
 #endif

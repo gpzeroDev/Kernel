@@ -513,44 +513,45 @@ static void __init mm_init(void)
 	pgtable_cache_init();
 	vmalloc_init();
 }
+
+#ifdef CONFIG_BOARD_PW28
 int battchg_pause = 0;
 EXPORT_SYMBOL(battchg_pause);
+
 static void __init analyse_kernel_nv(char *name, int in_qemu)
 {
-    char *value = strchr(name, '=');
+	char *value = strchr(name, '=');
 
-    if (value == 0) return;
-    *value++ = 0;
-    if (*name == 0) return;
+	if (value == 0)
+		return;
 
-       if(!strcmp(name,"androidboot.battchg_pause"))
-	   {
-            if (!strcmp(value,"true")) 
-#ifdef CONFIG_USE_OLD_BATT_PAUSE			
-                battchg_pause = 1;
-			 if (!strcmp(value,"clk")) 
-                battchg_pause = 2;
-#else
-                battchg_pause = 0;
-			 if (!strcmp(value,"clk")) 
-                battchg_pause = 0;
-#endif
-	   }
+	*value++ = 0;
+
+	if (*name == 0)
+		return;
+
+	if(!strcmp(name,"androidboot.battchg_pause")) {
+		if (!strcmp(value, "true")) 
+			battchg_pause = 1;
+		if (!strcmp(value, "clk")) 
+			battchg_pause = 2;
+	}
 }
 
 static void __init analyse_kernel_cmdline(int in_qemu)
 {
-    char *ptr;
+	char *ptr;
     
-    ptr = boot_command_line;
-    while (ptr && *ptr) {
-        char *x = strchr(ptr, ' ');
-        if (x != 0) *x++ = 0;
-        analyse_kernel_nv(ptr, in_qemu);
-        ptr = x;
-    }
-
+	ptr = boot_command_line;
+	while (ptr && *ptr) {
+		char *x = strchr(ptr, ' ');
+		if (x != 0)
+			*x++ = 0;
+		analyse_kernel_nv(ptr, in_qemu);
+		ptr = x;
+	}
 }
+#endif
 
 asmlinkage void __init start_kernel(void)
 {
@@ -597,8 +598,10 @@ asmlinkage void __init start_kernel(void)
 	page_alloc_init();
 
 	printk(KERN_NOTICE "Kernel command line: %s\n", boot_command_line);
+#ifdef CONFIG_BOARD_PW28
 	analyse_kernel_cmdline(0);
-	printk(KERN_NOTICE "Kernel command line: %d\n", battchg_pause);
+	printk(KERN_NOTICE "Kernel battchg_pause: %d\n", battchg_pause);
+#endif
 	parse_early_param();
 	parse_args("Booting kernel", static_command_line, __start___param,
 		   __stop___param - __start___param,

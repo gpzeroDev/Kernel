@@ -49,20 +49,17 @@
 #include "mdp4.h"
 
 #ifdef CONFIG_FB_MSM_LOGO
-#define INIT_IMAGE_FILE_320_480 "/320_480logo.rle"
-#define INIT_IMAGE_FILE_480_800 "/480_800logo.rle"
-
+#define INIT_IMAGE_FILE "/320_480logo.rle"
 extern int load_565rle_image(char *filename);
 #endif
+
+#ifdef CONFIG_BOARD_PW28
 extern int battchg_pause;
+#endif
+
 static unsigned char *fbram;
 static unsigned char *fbram_phys;
 static int fbram_size;
-
-#ifdef CONFIG_FB_MSM_LCDC_LG4573_WVGA_PANEL
-unsigned int g_vcom = 0;
-bool 		vcom_inited = FALSE;
-#endif
 
 static struct platform_device *pdev_list[MSM_FB_MAX_DEV_LIST];
 static int pdev_list_cnt;
@@ -318,7 +315,7 @@ static int msm_fb_probe(struct platform_device *pdev)
 
 	mfd->panel_info.frame_count = 0;
 	mfd->bl_level = mfd->panel_info.bl_max;
-	mfd->bl_level = 0;
+
 #ifdef CONFIG_FB_MSM_OVERLAY
 	mfd->overlay_play_enable = 1;
 #endif
@@ -1096,101 +1093,10 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 	     mfd->index, fbi->var.xres, fbi->var.yres, fbi->fix.smem_len);
 
 #ifdef CONFIG_FB_MSM_LOGO
-	{
-#if 0
-		int power_on_status;
-
-		extern int msm_proc_comm(unsigned cmd, unsigned *data1, unsigned *data2);
-		msm_proc_comm(6/*PCOM_GET_POWER_ON_STATUS*/,&power_on_status,0);
-
-		printk(KERN_ERR "\nMSM_FB.C POWER ON %x\n",power_on_status);
+#ifdef CONFIG_BOARD_PW28
+	if (battchg_pause == 0)
 #endif
-if (0)
-{
-    unsigned short *pbuf;
-    unsigned int i, j;
-	pbuf = (unsigned short *)(fbi->screen_base);
-    
-	mfd->bl_level = mfd->panel_info.bl_max;
-	msm_fb_set_backlight(mfd, mfd->bl_level, 0);
-    
-    for (i = 0; i < 480; i++) {
-        for (j = 0; j < 107; j++) {
-            *pbuf = 0xF800;
-            pbuf++;
-        }
-        for (j = 0; j < 106; j++) {
-            *pbuf = 0x07E0;
-            pbuf++;
-        }
-        for (j = 0; j < 107; j++) {
-            *pbuf = 0x001F;
-            pbuf++;
-        }
-    }
-
-	pbuf = (unsigned short *)(fbi->screen_base);    
-    for (j = 0; j < 320; j++) {
-        *pbuf = 0xFFFF;
-    }
-    
-    for (i = 0; i < 159; i ++) {
-        for (j = 0; j < 320; j++) {
-            if (0 == j || 319 == j) {
-                *pbuf = 0xFFFF;
-            }
-            else {
-                *pbuf = 0x001F;                
-            }            
-            pbuf++;
-        }
-    }
-
-    for (i = 0; i < 160; i ++) {
-        for (j = 0; j < 320; j++) {
-            if (0 == j || 319 == j) {
-                *pbuf = 0xFFFF;
-            }
-            else {
-                *pbuf = 0x07E0;                
-            }            
-            pbuf++;
-        }
-    }
-    
-    for (i = 0; i < 159; i ++) {
-        for (j = 0; j < 320; j++) {
-            if (0 == j || 319 == j) {
-                *pbuf = 0xFFFF;
-            }
-            else {
-                *pbuf = 0xF800;                
-            }            
-            pbuf++;
-        }
-    }
-
-    for (j = 0; j < 320; j++) {
-        *pbuf = 0xFFFF;
-    }
-    
-	printk(KERN_ERR "stop by wangyu");
-    while(1);
-}
-	if(battchg_pause == 0)
-	{	
-		if(fbi->var.xres == 320 && fbi->var.yres ==480)
-		{
-			load_565rle_image(INIT_IMAGE_FILE_320_480); 
-		}
-		else if(fbi->var.xres == 480 && fbi->var.yres == 800)
-		{
-			load_565rle_image(INIT_IMAGE_FILE_480_800); 
-		}
-		mfd->bl_level = mfd->panel_info.bl_max;
-		msm_fb_set_backlight(mfd, mfd->bl_level, 0);
-	}
-	}
+	if (!load_565rle_image(INIT_IMAGE_FILE)) ;	/* Flip buffer */
 #endif
 	ret = 0;
 
@@ -2586,11 +2492,7 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 #endif
 	struct mdp_page_protection fb_page_protection;
 	int ret = 0;
-#ifdef CONFIG_FB_MSM_LCDC_LG4573_WVGA_PANEL
-	struct msm_fb_panel_data *pdata = NULL ;
-	int vcom_return = 0;
-	pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
-#endif
+
 	switch (cmd) {
 #ifdef CONFIG_FB_MSM_OVERLAY
 	case MSMFB_OVERLAY_GET:
@@ -2620,14 +2522,6 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		break;
 #endif
 	case MSMFB_BLIT:
-#ifdef CONFIG_FB_MSM_LCDC_LG4573_WVGA_PANEL		
-		if (!vcom_inited)
-		{
-			pdata->init_vcom(&g_vcom);
-			printk("get vcom2 = 0x%x\n",g_vcom);
-			vcom_inited = TRUE;
-		}
-#endif
 		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_blit(info, argp);
 		up(&msm_fb_ioctl_ppp_sem);
@@ -2764,20 +2658,6 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		if (ret)
 				return ret;
 		break;
-
-#ifdef CONFIG_FB_MSM_LCDC_LG4573_WVGA_PANEL
-	case MSMFB_SET_PANEL_VCOM:
-		copy_from_user(&g_vcom, argp, sizeof(g_vcom)) ;
-		pdata->set_vcom(&g_vcom);
-		printk("msm_fb_ioctl MSMFB_SET_PANEL_VCOM g_vcom = 0x%x\n",g_vcom);
-		break;
-		
-	case MSMFB_GET_PANEL_VCOM:
-		pdata->get_vcom(&g_vcom);
-		copy_to_user(argp, &g_vcom, sizeof(g_vcom)) ;
-		printk("msm_fb_ioctl MSMFB_GET_PANEL_VCOM g_vcom = 0x%x\n",g_vcom);
-		break;
-#endif
 
 	case MSMFB_SET_PAGE_PROTECTION:
 #ifdef CONFIG_ARCH_QSD8X50
