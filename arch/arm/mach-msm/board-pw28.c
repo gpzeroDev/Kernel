@@ -89,7 +89,7 @@
 #endif
 
 /* Using upper 1/2MB of Apps Bootloader memory*/
-#define MSM_PMEM_AUDIO_START_ADDR	0x80000ul
+#define MSM_PMEM_AUDIO_START_ADDR	0x1C000ul
 
 #define MANU_NAME			"SIMCOM"
 #define MASS_STORAGE_NAME	"SIMCOM"
