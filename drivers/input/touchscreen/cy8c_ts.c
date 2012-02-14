@@ -3,7 +3,7 @@
  * drivers/input/touchscreen/cy8c_ts.c
  *
  * Copyright (C) 2009, 2010 Cypress Semiconductor, Inc.
- * Copyright (c) 2010, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2010, 2011 Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -41,9 +41,18 @@
 #include <linux/irq.h>
 #include <linux/gpio.h>
 #include <linux/workqueue.h>
+#include <linux/mutex.h>
+#include <linux/delay.h>
 #include <linux/input/cy8c_ts.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
+
+#if defined(CONFIG_HAS_EARLYSUSPEND)
+#include <linux/earlysuspend.h>
+
+/* Early-suspend level */
+#define CY8C_TS_SUSPEND_LEVEL 1
+#endif
 
 #define CY8CTMA300	0x0
 #define CY8CTMG200	0x1
@@ -103,6 +112,13 @@ struct cy8c_ts {
 	u8 *touch_data;
 	u8 device_id;
 	u8 prev_touches;
+	bool is_suspended;
+	bool int_pending;
+	struct mutex sus_lock;
+	u32 pen_irq;
+#if defined(CONFIG_HAS_EARLYSUSPEND)
+	struct early_suspend		early_suspend;
+#endif
 };
 
 static inline u16 join_bytes(u8 a, u8 b)
@@ -221,7 +237,7 @@ static void process_tmg200_data(struct cy8c_ts *ts)
 				ts->touch_data[ts->dd->y_index+1]);
 		id = ts->touch_data[ts->dd->id_index];
 
-		report_data(ts, x, y, 255, id);
+		report_data(ts, x, y, 255, id - 1);
 
 		if (touches == 2) {
 			x = join_bytes(ts->touch_data[ts->dd->x_index+5],
@@ -230,7 +246,7 @@ static void process_tmg200_data(struct cy8c_ts *ts)
 				ts->touch_data[ts->dd->y_index+6]);
 			id = ts->touch_data[ts->dd->id_index+5];
 
-			report_data(ts, x, y, 255, id);
+			report_data(ts, x, y, 255, id - 1);
 		}
 	} else {
 		for (i = 0; i < ts->prev_touches; i++) {
@@ -250,6 +266,15 @@ static void cy8c_ts_xy_worker(struct work_struct *work)
 	struct cy8c_ts *ts = container_of(work, struct cy8c_ts,
 				 work.work);
 
+	mutex_lock(&ts->sus_lock);
+	if (ts->is_suspended == true) {
+		dev_dbg(&ts->client->dev, "TS is supended\n");
+		ts->int_pending = true;
+		mutex_unlock(&ts->sus_lock);
+		return;
+	}
+	mutex_unlock(&ts->sus_lock);
+
 	/* read data from DATA_REG */
 	rc = cy8c_ts_read(ts->client, ts->dd->data_reg, ts->touch_data,
 							ts->dd->data_size);
@@ -267,10 +292,7 @@ static void cy8c_ts_xy_worker(struct work_struct *work)
 		process_tmg200_data(ts);
 
 schedule:
-	if (ts->pdata->use_polling)
-		queue_delayed_work(ts->wq, &ts->work, TOUCHSCREEN_TIMEOUT);
-	else
-		enable_irq(ts->client->irq);
+	enable_irq(ts->pen_irq);
 
 	/* write to STATUS_REG to update coordinates*/
 	rc = cy8c_ts_write_reg_u8(ts->client, ts->dd->status_reg,
@@ -296,82 +318,10 @@ static irqreturn_t cy8c_ts_irq(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static int cy8c_ts_open(struct input_dev *dev)
-{
-	int rc;
-	struct cy8c_ts *ts = input_get_drvdata(dev);
-
-	/* power on the device */
-	if (ts->pdata->power_on) {
-		rc = ts->pdata->power_on(1);
-		if (rc) {
-			pr_err("%s: Unable to power on the device\n", __func__);
-			return -EINVAL;
-		}
-	}
-
-	if (!ts->pdata->use_polling) {
-
-		rc = request_irq(ts->client->irq, cy8c_ts_irq,
-					IRQF_TRIGGER_FALLING,
-					ts->client->dev.driver->name, ts);
-		if (rc) {
-			dev_err(&ts->client->dev, "could not request irq\n");
-			goto error_req_irq_fail;
-		}
-
-		/* Clear the status register of the TS controller */
-		rc = cy8c_ts_write_reg_u8(ts->client, ts->dd->status_reg,
-							ts->dd->update_data);
-		if (rc < 0) {
-			/* Do multiple writes in case of failure */
-			dev_err(&ts->client->dev, "%s: write failed %d"
-					"trying again\n", __func__, rc);
-			rc = cy8c_ts_write_reg_u8(ts->client,
-				ts->dd->status_reg, ts->dd->update_data);
-			if (rc < 0) {
-				dev_err(&ts->client->dev, "%s: write failed"
-					"second time %d \n", __func__, rc);
-			}
-		}
-	} else {
-		/* wait for 25sec before reading I2C due to
-		 * hardware limitation
-		 */
-		queue_delayed_work(ts->wq, &ts->work, INITIAL_DELAY);
-	}
-
-	return 0;
-
-error_req_irq_fail:
-	if (ts->pdata->power_on)
-		ts->pdata->power_on(0);
-
-	return rc;
-}
-
-static void cy8c_ts_close(struct input_dev *dev)
-{
-	int rc;
-	struct cy8c_ts *ts = input_get_drvdata(dev);
-
-	rc = cancel_delayed_work_sync(&ts->work);
-
-	if (rc && !ts->pdata->use_polling)
-		enable_irq(ts->client->irq);
-
-	if (!ts->pdata->use_polling)
-		free_irq(ts->client->irq, ts);
-
-	/* power off the device */
-	if (ts->pdata->power_on)
-		ts->pdata->power_on(0);
-}
-
 static int cy8c_ts_init_ts(struct i2c_client *client, struct cy8c_ts *ts)
 {
 	struct input_dev *input_device;
-	int rc;
+	int rc = 0;
 
 	ts->dd = &devices[ts->device_id];
 
@@ -430,11 +380,6 @@ static int cy8c_ts_init_ts(struct i2c_client *client, struct cy8c_ts *ts)
 			ts->pdata->min_width, ts->pdata->max_width, 0, 0);
 	input_set_abs_params(input_device, ABS_MT_TRACKING_ID,
 			ts->pdata->min_tid, ts->pdata->max_tid, 0, 0);
-	/*setting dummy key to make it work for virutal keys*/
-	input_set_capability(input_device, EV_KEY, KEY_PROG1);
-
-	input_device->open = cy8c_ts_open;
-	input_device->close = cy8c_ts_close;
 
 	ts->wq = create_singlethread_workqueue("kworkqueue_ts");
 	if (!ts->wq) {
@@ -465,19 +410,46 @@ static int cy8c_ts_suspend(struct device *dev)
 	struct cy8c_ts *ts = dev_get_drvdata(dev);
 	int rc = 0;
 
-	if (!ts->pdata->use_polling)
-		disable_irq_nosync(ts->client->irq);
+	if (device_may_wakeup(dev)) {
+		/* mark suspend flag */
+		mutex_lock(&ts->sus_lock);
+		ts->is_suspended = true;
+		mutex_unlock(&ts->sus_lock);
 
-	rc = cancel_delayed_work_sync(&ts->work);
+		enable_irq_wake(ts->pen_irq);
+	} else {
 
-	if (rc && !ts->pdata->use_polling)
-		enable_irq(ts->client->irq);
+		disable_irq_nosync(ts->pen_irq);
+		rc = cancel_delayed_work_sync(&ts->work);
 
-	if (ts->pdata->power_on) {
-		rc = ts->pdata->power_on(0);
 		if (rc) {
-			dev_err(dev, "unable to goto suspend\n");
-			return rc;
+			/* missed the worker, write to STATUS_REG to
+			   acknowledge interrupt */
+			rc = cy8c_ts_write_reg_u8(ts->client,
+				ts->dd->status_reg, ts->dd->update_data);
+			if (rc < 0) {
+				dev_err(&ts->client->dev,
+					"write failed, try once more\n");
+
+				rc = cy8c_ts_write_reg_u8(ts->client,
+					ts->dd->status_reg,
+					ts->dd->update_data);
+				if (rc < 0)
+					dev_err(&ts->client->dev,
+						"write failed, exiting\n");
+			}
+
+			enable_irq(ts->pen_irq);
+		}
+
+		gpio_free(ts->pdata->irq_gpio);
+
+		if (ts->pdata->power_on) {
+			rc = ts->pdata->power_on(0);
+			if (rc) {
+				dev_err(dev, "unable to goto suspend\n");
+				return rc;
+			}
 		}
 	}
 	return 0;
@@ -488,25 +460,91 @@ static int cy8c_ts_resume(struct device *dev)
 	struct cy8c_ts *ts = dev_get_drvdata(dev);
 	int rc = 0;
 
-	if (ts->pdata->power_on) {
-		rc = ts->pdata->power_on(1);
+	if (device_may_wakeup(dev)) {
+		disable_irq_wake(ts->pen_irq);
+
+		mutex_lock(&ts->sus_lock);
+		ts->is_suspended = false;
+
+		if (ts->int_pending == true) {
+			ts->int_pending = false;
+
+			/* start a delayed work */
+			queue_delayed_work(ts->wq, &ts->work, 0);
+		}
+		mutex_unlock(&ts->sus_lock);
+
+	} else {
+		if (ts->pdata->power_on) {
+			rc = ts->pdata->power_on(1);
+			if (rc) {
+				dev_err(dev, "unable to resume\n");
+				return rc;
+			}
+		}
+
+		/* configure touchscreen interrupt gpio */
+		rc = gpio_request(ts->pdata->irq_gpio, "cy8c_irq_gpio");
 		if (rc) {
-			dev_err(dev, "unable to resume\n");
-			return rc;
+			pr_err("%s: unable to request gpio %d\n",
+				__func__, ts->pdata->irq_gpio);
+			goto err_power_off;
+		}
+
+		rc = gpio_direction_input(ts->pdata->irq_gpio);
+		if (rc) {
+			pr_err("%s: unable to set direction for gpio %d\n",
+				__func__, ts->pdata->irq_gpio);
+			goto err_gpio_free;
+		}
+
+		enable_irq(ts->pen_irq);
+
+		/* Clear the status register of the TS controller */
+		rc = cy8c_ts_write_reg_u8(ts->client,
+			ts->dd->status_reg, ts->dd->update_data);
+		if (rc < 0) {
+			dev_err(&ts->client->dev,
+				"write failed, try once more\n");
+
+			rc = cy8c_ts_write_reg_u8(ts->client,
+				ts->dd->status_reg,
+				ts->dd->update_data);
+			if (rc < 0)
+				dev_err(&ts->client->dev,
+					"write failed, exiting\n");
 		}
 	}
-
-	if (ts->pdata->use_polling)
-		queue_delayed_work(ts->wq, &ts->work, TOUCHSCREEN_TIMEOUT);
-	else
-		enable_irq(ts->client->irq);
-
 	return 0;
+err_gpio_free:
+	gpio_free(ts->pdata->irq_gpio);
+err_power_off:
+	if (ts->pdata->power_on)
+		rc = ts->pdata->power_on(0);
+	return rc;
 }
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void cy8c_ts_early_suspend(struct early_suspend *h)
+{
+	struct cy8c_ts *ts = container_of(h, struct cy8c_ts, early_suspend);
+
+	cy8c_ts_suspend(&ts->client->dev);
+}
+
+static void cy8c_ts_late_resume(struct early_suspend *h)
+{
+	struct cy8c_ts *ts = container_of(h, struct cy8c_ts, early_suspend);
+
+	cy8c_ts_resume(&ts->client->dev);
+}
+#endif
+
 static struct dev_pm_ops cy8c_ts_pm_ops = {
+#ifndef CONFIG_HAS_EARLYSUSPEND
 	.suspend	= cy8c_ts_suspend,
 	.resume		= cy8c_ts_resume,
+#endif
 };
 #endif
 
@@ -525,18 +563,6 @@ static int __devinit cy8c_ts_probe(struct i2c_client *client,
 	if (!i2c_check_functionality(client->adapter,
 				     I2C_FUNC_SMBUS_READ_WORD_DATA)) {
 		dev_err(&client->dev, "I2C functionality not supported\n");
-		return -EIO;
-	}
-
-	/* read one byte to make sure i2c device exists */
-	if (id->driver_data == CY8CTMA300)
-		temp_reg = 0x01;
-	else
-		temp_reg = 0x05;
-
-	rc = cy8c_ts_read_reg_u8(client, temp_reg);
-	if (rc < 0) {
-		dev_err(&client->dev, "i2c sanity check failed\n");
 		return -EIO;
 	}
 
@@ -563,14 +589,124 @@ static int __devinit cy8c_ts_probe(struct i2c_client *client,
 		}
 	}
 
+	/* power on the device */
+	if (ts->pdata->power_on) {
+		rc = ts->pdata->power_on(1);
+		if (rc) {
+			pr_err("%s: Unable to power on the device\n", __func__);
+			goto error_dev_setup;
+		}
+	}
+
+	/* read one byte to make sure i2c device exists */
+	if (id->driver_data == CY8CTMA300)
+		temp_reg = 0x01;
+	else
+		temp_reg = 0x05;
+
+	rc = cy8c_ts_read_reg_u8(client, temp_reg);
+	if (rc < 0) {
+		dev_err(&client->dev, "i2c sanity check failed\n");
+		goto error_power_on;
+	}
+
+	ts->is_suspended = false;
+	ts->int_pending = false;
+	mutex_init(&ts->sus_lock);
+
 	rc = cy8c_ts_init_ts(client, ts);
 	if (rc < 0) {
 		dev_err(&client->dev, "CY8CTMG200-TMA300 init failed\n");
-		goto error_dev_setup;
+		goto error_mutex_destroy;
 	}
 
-	return 0;
+	if (ts->pdata->resout_gpio < 0)
+		goto config_irq_gpio;
 
+	/* configure touchscreen reset out gpio */
+	rc = gpio_request(ts->pdata->resout_gpio, "cy8c_resout_gpio");
+	if (rc) {
+		pr_err("%s: unable to request gpio %d\n",
+			__func__, ts->pdata->resout_gpio);
+		goto error_uninit_ts;
+	}
+
+	rc = gpio_direction_output(ts->pdata->resout_gpio, 0);
+	if (rc) {
+		pr_err("%s: unable to set direction for gpio %d\n",
+			__func__, ts->pdata->resout_gpio);
+		goto error_resout_gpio_dir;
+	}
+	/* reset gpio stabilization time */
+	msleep(20);
+
+config_irq_gpio:
+	/* configure touchscreen interrupt gpio */
+	rc = gpio_request(ts->pdata->irq_gpio, "cy8c_irq_gpio");
+	if (rc) {
+		pr_err("%s: unable to request gpio %d\n",
+			__func__, ts->pdata->irq_gpio);
+		goto error_irq_gpio_req;
+	}
+
+	rc = gpio_direction_input(ts->pdata->irq_gpio);
+	if (rc) {
+		pr_err("%s: unable to set direction for gpio %d\n",
+			__func__, ts->pdata->irq_gpio);
+		goto error_irq_gpio_dir;
+	}
+
+	ts->pen_irq = gpio_to_irq(ts->pdata->irq_gpio);
+	rc = request_irq(ts->pen_irq, cy8c_ts_irq,
+				IRQF_TRIGGER_FALLING,
+				ts->client->dev.driver->name, ts);
+	if (rc) {
+		dev_err(&ts->client->dev, "could not request irq\n");
+		goto error_req_irq_fail;
+	}
+
+	/* Clear the status register of the TS controller */
+	rc = cy8c_ts_write_reg_u8(ts->client, ts->dd->status_reg,
+						ts->dd->update_data);
+	if (rc < 0) {
+		/* Do multiple writes in case of failure */
+		dev_err(&ts->client->dev, "%s: write failed %d"
+				"trying again\n", __func__, rc);
+		rc = cy8c_ts_write_reg_u8(ts->client,
+			ts->dd->status_reg, ts->dd->update_data);
+		if (rc < 0) {
+			dev_err(&ts->client->dev, "%s: write failed"
+				"second time(%d)\n", __func__, rc);
+		}
+	}
+
+	device_init_wakeup(&client->dev, ts->pdata->wakeup);
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	ts->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN +
+						CY8C_TS_SUSPEND_LEVEL;
+	ts->early_suspend.suspend = cy8c_ts_early_suspend;
+	ts->early_suspend.resume = cy8c_ts_late_resume;
+	register_early_suspend(&ts->early_suspend);
+#endif
+
+	return 0;
+error_req_irq_fail:
+error_irq_gpio_dir:
+	gpio_free(ts->pdata->irq_gpio);
+error_irq_gpio_req:
+error_resout_gpio_dir:
+	if (ts->pdata->resout_gpio >= 0)
+		gpio_free(ts->pdata->resout_gpio);
+error_uninit_ts:
+	destroy_workqueue(ts->wq);
+	input_unregister_device(ts->input);
+	kfree(ts->touch_data);
+error_mutex_destroy:
+	mutex_destroy(&ts->sus_lock);
+error_power_on:
+	if (ts->pdata->power_on)
+		ts->pdata->power_on(0);
 error_dev_setup:
 	if (ts->pdata->dev_setup)
 		ts->pdata->dev_setup(0);
@@ -584,22 +720,29 @@ error_touch_data_alloc:
 static int __devexit cy8c_ts_remove(struct i2c_client *client)
 {
 	struct cy8c_ts *ts = i2c_get_clientdata(client);
-	int rc;
 
+#if defined(CONFIG_HAS_EARLYSUSPEND)
+	unregister_early_suspend(&ts->early_suspend);
+#endif
 	pm_runtime_set_suspended(&client->dev);
 	pm_runtime_disable(&client->dev);
 
-	rc = cancel_delayed_work_sync(&ts->work);
+	device_init_wakeup(&client->dev, 0);
 
-	if (rc && !ts->pdata->use_polling)
-		enable_irq(ts->client->irq);
+	cancel_delayed_work_sync(&ts->work);
 
-	if (!ts->pdata->use_polling)
-		free_irq(client->irq, ts);
+	free_irq(ts->pen_irq, ts);
+
+	gpio_free(ts->pdata->irq_gpio);
+
+	if (ts->pdata->resout_gpio >= 0)
+		gpio_free(ts->pdata->resout_gpio);
 
 	destroy_workqueue(ts->wq);
 
 	input_unregister_device(ts->input);
+
+	mutex_destroy(&ts->sus_lock);
 
 	if (ts->pdata->power_on)
 		ts->pdata->power_on(0);

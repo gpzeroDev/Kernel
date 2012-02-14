@@ -105,8 +105,8 @@ static struct hid_usage *hidinput_find_key(struct hid_device *hid,
 	return NULL;
 }
 
-static int hidinput_getkeycode(struct input_dev *dev, int scancode,
-				int *keycode)
+static int hidinput_getkeycode(struct input_dev *dev,
+			       unsigned int scancode, unsigned int *keycode)
 {
 	struct hid_device *hid = input_get_drvdata(dev);
 	struct hid_usage *usage;
@@ -119,8 +119,8 @@ static int hidinput_getkeycode(struct input_dev *dev, int scancode,
 	return -EINVAL;
 }
 
-static int hidinput_setkeycode(struct input_dev *dev, int scancode,
-				int keycode)
+static int hidinput_setkeycode(struct input_dev *dev,
+			       unsigned int scancode, unsigned int keycode)
 {
 	struct hid_device *hid = input_get_drvdata(dev);
 	struct hid_usage *usage;

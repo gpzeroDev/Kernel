@@ -74,9 +74,6 @@ static void mmc_test_prepare_mrq(struct mmc_test_card *test,
 	}
 
 	mrq->cmd->arg = dev_addr;
-	if (!mmc_card_blockaddr(test->card))
-		mrq->cmd->arg <<= 9;
-
 	mrq->cmd->flags = MMC_RSP_R1 | MMC_CMD_ADTC;
 
 	if (blocks == 1)

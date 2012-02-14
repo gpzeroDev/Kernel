@@ -26,7 +26,14 @@
 #include <linux/platform_device.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
+#include <linux/slab.h>
 #include <linux/input/tdisc_shinetsu.h>
+
+#if defined(CONFIG_HAS_EARLYSUSPEND)
+#include <linux/earlysuspend.h>
+/* Early-suspend level */
+#define TDISC_SUSPEND_LEVEL 1
+#endif
 
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("0.1");
@@ -47,6 +54,7 @@ MODULE_ALIAS("platform:tdisc-shinetsu");
 #define TDISC_EAST_SWITCH_MASK		0x08
 #define TDISC_WEST_SWITCH_MASK		0x04
 #define TDISC_CENTER_SWITCH		0x01
+#define TDISC_BUTTON_PRESS_MASK		0x3F
 
 #define DRIVER_NAME			"tdisc-shinetsu"
 #define DEVICE_NAME			"vtd518"
@@ -58,11 +66,16 @@ struct tdisc_data {
 	struct i2c_client *clientp;
 	struct tdisc_platform_data *pdata;
 	struct delayed_work tdisc_work;
+#if defined(CONFIG_HAS_EARLYSUSPEND)
+	struct early_suspend	tdisc_early_suspend;
+#endif
 };
 
 static void process_tdisc_data(struct tdisc_data *dd, u8 *data)
 {
 	int i;
+	static bool button_press;
+	s8 x, y;
 
 	/* Check if the user is actively navigating */
 	if (!(data[7] & TDISC_USER_ACTIVE_MASK)) {
@@ -71,40 +84,57 @@ static void process_tdisc_data(struct tdisc_data *dd, u8 *data)
 	}
 
 	for (i = 0; i < 8 ; i++)
-		pr_debug(" Data[%d] = %x \n", i, data[i]);
+		pr_debug(" Data[%d] = %x\n", i, data[i]);
 
-	/* Report relative motion values */
-	input_report_rel(dd->tdisc_device, REL_X, (s8) data[0]);
-	input_report_rel(dd->tdisc_device, REL_Y, (s8) data[1]);
-
-	/* Report absolute motion values */
-	/* TODO: Check if absolute screen values are to be passed*/
-	input_report_abs(dd->tdisc_device, ABS_X, data[2]);
-	input_report_abs(dd->tdisc_device, ABS_Y, data[3]);
-	input_report_abs(dd->tdisc_device, ABS_PRESSURE, data[4]);
-
-	/* Report Scroll  tics */
-	input_report_rel(dd->tdisc_device, REL_WHEEL, (s8) data[6]);
-
-	/* Report button status */
-	input_report_key(dd->tdisc_device, KEY_UP,
+	/* Check if there is a button press */
+	if (dd->pdata->tdisc_report_keys)
+		if (data[7] & TDISC_BUTTON_PRESS_MASK || button_press == true) {
+			input_report_key(dd->tdisc_device, KEY_UP,
 				(data[7] & TDISC_NORTH_SWITCH_MASK));
 
-	input_report_key(dd->tdisc_device, KEY_DOWN,
+			input_report_key(dd->tdisc_device, KEY_DOWN,
 				(data[7] & TDISC_SOUTH_SWITCH_MASK));
 
-	input_report_key(dd->tdisc_device, KEY_RIGHT,
+			input_report_key(dd->tdisc_device, KEY_RIGHT,
 				 (data[7] & TDISC_EAST_SWITCH_MASK));
 
-	input_report_key(dd->tdisc_device, KEY_LEFT,
+			input_report_key(dd->tdisc_device, KEY_LEFT,
 				 (data[7] & TDISC_WEST_SWITCH_MASK));
 
-	input_report_key(dd->tdisc_device, KEY_ENTER,
+			input_report_key(dd->tdisc_device, KEY_ENTER,
 				 (data[7] & TDISC_CENTER_SWITCH));
+
+			if (data[7] & TDISC_BUTTON_PRESS_MASK)
+				button_press = true;
+			else
+				button_press = false;
+		}
+
+	if (dd->pdata->tdisc_report_relative) {
+		/* Report relative motion values */
+		x = (s8) data[0];
+		y = (s8) data[1];
+
+		if (dd->pdata->tdisc_reverse_x)
+			x *= -1;
+		if (dd->pdata->tdisc_reverse_y)
+			y *= -1;
+
+		input_report_rel(dd->tdisc_device, REL_X, x);
+		input_report_rel(dd->tdisc_device, REL_Y, y);
+	}
+
+	if (dd->pdata->tdisc_report_absolute) {
+		input_report_abs(dd->tdisc_device, ABS_X, data[2]);
+		input_report_abs(dd->tdisc_device, ABS_Y, data[3]);
+		input_report_abs(dd->tdisc_device, ABS_PRESSURE, data[4]);
+	}
+
+	if (dd->pdata->tdisc_report_wheel)
+		input_report_rel(dd->tdisc_device, REL_WHEEL, (s8) data[6]);
 
 	input_sync(dd->tdisc_device);
 }
-
 
 static void tdisc_work_f(struct work_struct *work)
 {
@@ -119,7 +149,7 @@ static void tdisc_work_f(struct work_struct *work)
 	 * reschedule the work after 25ms. If pin is high, exit
 	 * and wait for next interrupt.
 	 */
-	rc = gpio_get_value(dd->pdata->tdisc_gpio);
+	rc = gpio_get_value_cansleep(dd->pdata->tdisc_gpio);
 	if (rc < 0) {
 		rc = pm_runtime_put_sync(&dd->clientp->dev);
 		if (rc < 0)
@@ -135,7 +165,7 @@ static void tdisc_work_f(struct work_struct *work)
 		rc = i2c_smbus_read_i2c_block_data(dd->clientp,
 				TDSIC_BLK_READ_CMD, 8, data);
 		if (rc < 0) {
-			pr_err("%s:I2C read failed,trying again\n", __func__);
+			pr_debug("%s:I2C read failed,trying again\n", __func__);
 			rc = i2c_smbus_read_i2c_block_data(dd->clientp,
 						TDSIC_BLK_READ_CMD, 8, data);
 			if (rc < 0) {
@@ -211,11 +241,10 @@ static int tdisc_open(struct input_dev *dev)
 		if (rc)
 			goto fail_open;
 	}
-
-	rc = request_irq(dd->clientp->irq, &tdisc_interrupt,
-			 IRQF_TRIGGER_FALLING, TDISC_INT, dd);
-	if (rc) {
-		pr_err("%s: request IRQ failed \n", __func__);
+	rc = request_any_context_irq(dd->clientp->irq, tdisc_interrupt,
+				 IRQF_TRIGGER_FALLING, TDISC_INT, dd);
+	if (rc < 0) {
+		pr_err("%s: request IRQ failed\n", __func__);
 		goto fail_irq_open;
 	}
 
@@ -244,6 +273,9 @@ static int __devexit tdisc_remove(struct i2c_client *client)
 
 	pm_runtime_disable(&client->dev);
 	dd = i2c_get_clientdata(client);
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	unregister_early_suspend(&dd->tdisc_early_suspend);
+#endif
 	input_unregister_device(dd->tdisc_device);
 	if (dd->pdata->tdisc_release != NULL)
 		dd->pdata->tdisc_release();
@@ -254,32 +286,77 @@ static int __devexit tdisc_remove(struct i2c_client *client)
 }
 
 #ifdef CONFIG_PM
-/* TODO: Power optimization in suspend and resume */
 static int tdisc_suspend(struct device *dev)
 {
+	int rc;
 	struct tdisc_data *dd;
 
 	dd = dev_get_drvdata(dev);
 	if (device_may_wakeup(&dd->clientp->dev))
 		enable_irq_wake(dd->clientp->irq);
+	else {
+		disable_irq(dd->clientp->irq);
+
+		if (cancel_delayed_work_sync(&dd->tdisc_work))
+			enable_irq(dd->clientp->irq);
+
+		if (dd->pdata->tdisc_disable) {
+			rc = dd->pdata->tdisc_disable();
+			if (rc) {
+				pr_err("%s: Suspend failed\n", __func__);
+				return rc;
+			}
+		}
+	}
 
 	return 0;
 }
 
 static int tdisc_resume(struct device *dev)
 {
+	int rc;
 	struct tdisc_data *dd;
 
 	dd = dev_get_drvdata(dev);
 	if (device_may_wakeup(&dd->clientp->dev))
 		disable_irq_wake(dd->clientp->irq);
+	else {
+		if (dd->pdata->tdisc_enable) {
+			rc = dd->pdata->tdisc_enable();
+			if (rc) {
+				pr_err("%s: Resume failed\n", __func__);
+				return rc;
+			}
+		}
+		enable_irq(dd->clientp->irq);
+	}
 
 	return 0;
 }
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void tdisc_early_suspend(struct early_suspend *h)
+{
+	struct tdisc_data *dd = container_of(h, struct tdisc_data,
+						tdisc_early_suspend);
+
+	tdisc_suspend(&dd->clientp->dev);
+}
+
+static void tdisc_late_resume(struct early_suspend *h)
+{
+	struct tdisc_data *dd = container_of(h, struct tdisc_data,
+						tdisc_early_suspend);
+
+	tdisc_resume(&dd->clientp->dev);
+}
+#endif
+
 static struct dev_pm_ops tdisc_pm_ops = {
+#ifndef CONFIG_HAS_EARLYSUSPEND
 	.suspend = tdisc_suspend,
 	.resume  = tdisc_resume,
+#endif
 };
 #endif
 
@@ -303,10 +380,10 @@ static int __devinit tdisc_probe(struct i2c_client *client,
 		return -ENODEV;
 
 	/* Enable runtime PM ops, start in ACTIVE mode */
-	rc = pm_runtime_set_active(&pdev->dev);
+	rc = pm_runtime_set_active(&client->dev);
 	if (rc < 0)
-		dev_dbg(&pdev->dev, "unable to set runtime pm state\n");
-	pm_runtime_enable(&pdev->dev);
+		dev_dbg(&client->dev, "unable to set runtime pm state\n");
+	pm_runtime_enable(&client->dev);
 
 	dd = kzalloc(sizeof *dd, GFP_KERNEL);
 	if (!dd) {
@@ -358,6 +435,7 @@ static int __devinit tdisc_probe(struct i2c_client *client,
 	/* Device capablities for relative motion */
 	input_set_capability(dd->tdisc_device, EV_REL, REL_X);
 	input_set_capability(dd->tdisc_device, EV_REL, REL_Y);
+	input_set_capability(dd->tdisc_device, EV_KEY, BTN_MOUSE);
 
 	/* Device capablities for absolute motion */
 	input_set_capability(dd->tdisc_device, EV_ABS, ABS_X);
@@ -399,6 +477,14 @@ static int __devinit tdisc_probe(struct i2c_client *client,
 	}
 
 	pm_runtime_set_suspended(&client->dev);
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	dd->tdisc_early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN +
+						TDISC_SUSPEND_LEVEL;
+	dd->tdisc_early_suspend.suspend = tdisc_early_suspend;
+	dd->tdisc_early_suspend.resume = tdisc_late_resume;
+	register_early_suspend(&dd->tdisc_early_suspend);
+#endif
 	return 0;
 
 probe_register_fail:

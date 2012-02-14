@@ -53,13 +53,9 @@ config ARCH_MSM8X60
 	select ARCH_REQUIRE_GPIOLIB
 	select MSM_ADM3
 	select REGULATOR
-	select MSM_PIL
-	select MSM_V2_TLMM
+	select MSM8660_TLMM
 	select ARCH_HAS_CPU_IDLE_WAIT
 	select MSM_DIRECT_SCLK_ACCESS
-	select MSM_RPM
-	select MSM_XO
-	select MSM_WATCHDOG
 
 endchoice
 
@@ -84,12 +80,6 @@ config  ARCH_MSM_SCORPIONMP
 	bool
 
 config  MSM_VIC
-	bool
-
-config MSM_RPM
-	bool "Resource Power Manager"
-
-config MSM_XO
 	bool
 
 config MSM_REMOTE_SPINLOCK_DEKKERS
@@ -341,15 +331,15 @@ config PHYS_OFFSET
 
 config KERNEL_PMEM_EBI_REGION
 	bool "Enable in-kernel PMEM region for EBI"
-	default y if ARCH_MSM8X60
+	default n
 	depends on ANDROID_PMEM && ARCH_MSM8X60
 	help
 	   Enable the in-kernel PMEM allocator to use EBI memory.
 
 config KERNEL_PMEM_SMI_REGION
 	bool "Enable in-kernel PMEM region for SMI"
-	default y if ARCH_MSM8X60
-	depends on ANDROID_PMEM && ((ARCH_QSD8X50 && !PMEM_GPU0) || (ARCH_MSM8X60 && !VCM))
+	default n
+	depends on ARCH_QSD8X50 && !PMEM_GPU0
 	help
 	   Enable the in-kernel PMEM allocator to use SMI memory.
 
@@ -650,7 +640,7 @@ config MSM_SMD_DEBUG
 	  between the ARM9 and ARM11
 
 config MSM_SDIO_AL
-	depends on (ARCH_MSM7X30 && HAS_WAKELOCK)
+	depends on ARCH_MSM7X30
 	default y
 	tristate "SDIO-Abstraction-Layer"
 	help
@@ -665,7 +655,7 @@ config MSM_SDIO_AL_TEST
 	  SDIO-AL functionality and performance test.
 
 config MSM_N_WAY_SMD
-	depends on (MSM_SMD && (ARCH_MSM_SCORPION || ARCH_MSM_SCORPIONMP || ARCH_MSM7X27 || ARCH_MSM7X25))
+	depends on (MSM_SMD && (ARCH_MSM_SCORPION || ARCH_MSM_SCORPIONMP || ARCH_MSM7X27))
 	default y
 	bool "MSM N-WAY SMD support"
 	help
@@ -673,7 +663,7 @@ config MSM_N_WAY_SMD
 	  normal APPS-MODEM SMD communication.
 
 config MSM_N_WAY_SMSM
-	depends on (MSM_SMD && (ARCH_MSM_SCORPION || ARCH_MSM_SCORPIONMP || ARCH_MSM7X27 || ARCH_MSM7X25))
+	depends on (MSM_SMD && (ARCH_MSM_SCORPION || ARCH_MSM_SCORPIONMP || ARCH_MSM7X27))
 	default y
 	bool "MSM N-WAY SMSM support"
 	help
@@ -890,7 +880,7 @@ config MSM_CPU_AVS
 	bool "Enable Adaptive Voltage Scaling (AVS)"
 	depends on (ARCH_MSM_SCORPION && QSD_SVS)
 	depends on ARCH_QSD8X50
-	default n
+	default y
 	help
 	  This enables the Adaptive Voltage Scaling feature of
 	  Qualcomm ARMv7 CPUs. It adjusts the voltage for each frequency
@@ -1156,51 +1146,8 @@ config MSM_NPA_SYSTEM_BUS
 	  PM_QOS System Bus rate requests are interpreted as 'Flow IDs' and
 	  are routed through the NPA framework.
 
-config MSM_IDLE_WAIT_ON_MODEM
-	int "Wait for Modem to become ready for idle power collapse"
-	default 0
-	help
-	  If Modem is not ready to handle Application Processor's request
-	  for idle power collapse, wait the number of microseconds in case
-	  Modem becomes ready soon.
-
-config MSM_PIL
-	bool "Peripheral image loading"
-	select FW_LOADER
-	depends on ARCH_MSM8X60
-	default n
-	help
-	  Some peripherals need to be loaded into memory before they can be
-	  brought out of reset.
-
-	  Say yes to support these devices.
-
-config SCORPION_Uni_45nm_BUG
-	bool "Scorpion Uni 45nm(SC45U): Workaround for ICIMVAU and BPIMVA"
-	depends on ARCH_MSM7X30 || (ARCH_QSD8X50 && MSM_SOC_REV_A)
-	default y
-	help
-	  Invalidating the Instruction Cache by Modified Virtual Address to PoU and
-	  invalidating the Branch Predictor Array by Modified Virtual Address can
-	  create invalid entries in the TLB with the wrong ASID values on Scorpion
-	  Uniprocessor 45nm (SC45U) cores. This option enables the recommended software
-	  workaround for Scorpion Uniprocessor 45nm cores.
-
-	  This bug is not applicable to any ScorpionMP or Scorpion Uni 65nm(SC65U) cores.
-
 config SMMU_8X60
 	bool
-
-config MSM_RPM_LOG
-	tristate "MSM Resource Power Manager Log Driver"
-	depends on DEBUG_FS
-	depends on ARCH_MSM8X60
-	default n
-	help
-	  This option enables a driver which can read from a circular buffer
-	  of messages produced by the RPM. These messages provide diagnostic
-	  information about RPM operation. The driver outputs the messages
-	  via a debugfs node.
 
 config SMMU
 	bool "System MMU support"
@@ -1231,18 +1178,4 @@ config MSM7200A_TLMM
 
 config MSM_V2_TLMM
        bool
-
-config MSM_BUS_SCALING
-	bool "Bus scaling driver"
-	default n
-
-config MSM_WATCHDOG
-	bool "MSM Watchdog Support"
-	depends on ARCH_MSM8X60
-	help
-		This enables the watchdog as is present on 8x60. Currently we use
-		core 0's watchdog, and reset the entire SoC if it times out. It does
-		not run during the bootup process, so it will not catch any early
-		lockups.
-
 endif

@@ -39,6 +39,9 @@
 #include <linux/workqueue.h>
 #include <linux/byteorder/generic.h>
 #include <linux/bitops.h>
+#include <linux/pm_runtime.h>
+#include <linux/firmware.h>
+#include <linux/mutex.h>
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif /* CONFIG_HAS_EARLYSUSPEND */
@@ -49,6 +52,8 @@
 
 uint32_t cyttsp_tsdebug1 = 0xff;
 module_param_named(tsdebug1, cyttsp_tsdebug1, uint, 0664);
+
+#define FW_FNAME_LEN 40
 
 /* CY TTSP I2C Driver private data */
 struct cyttsp {
@@ -65,6 +70,10 @@ struct cyttsp {
 	u16 prv_mt_tch[CY_NUM_MT_TCH_ID];
 	u16 prv_mt_pos[CY_NUM_TRK_ID][2];
 	atomic_t irq_enabled;
+	bool cyttsp_update_fw;
+	bool cyttsp_fwloader_mode;
+	bool is_suspended;
+	char fw_fname[FW_FNAME_LEN];
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
 #endif /* CONFIG_HAS_EARLYSUSPEND */
@@ -97,8 +106,8 @@ static int cyttsp_putbl(struct cyttsp *ts, int show,
 static int __devinit cyttsp_probe(struct i2c_client *client,
 			const struct i2c_device_id *id);
 static int __devexit cyttsp_remove(struct i2c_client *client);
-static int cyttsp_resume(struct i2c_client *client);
-static int cyttsp_suspend(struct i2c_client *client, pm_message_t message);
+static int cyttsp_resume(struct device *dev);
+static int cyttsp_suspend(struct device *dev);
 
 /* Static variables */
 static struct cyttsp_gen3_xydata_t g_xy_data;
@@ -115,15 +124,19 @@ static u8 bl_cmd[] = {
 
 MODULE_DEVICE_TABLE(i2c, cyttsp_id);
 
+static const struct dev_pm_ops cyttsp_pm_ops = {
+	.suspend = cyttsp_suspend,
+	.resume = cyttsp_resume,
+};
+
 static struct i2c_driver cyttsp_driver = {
 	.driver = {
 		.name = CY_I2C_NAME,
 		.owner = THIS_MODULE,
+		.pm = &cyttsp_pm_ops,
 	},
 	.probe = cyttsp_probe,
 	.remove = __devexit_p(cyttsp_remove),
-	.suspend = cyttsp_suspend,
-	.resume = cyttsp_resume,
 	.id_table = cyttsp_id,
 };
 
@@ -181,6 +194,722 @@ static ssize_t cyttsp_irq_enable(struct device *dev,
 }
 
 static DEVICE_ATTR(irq_enable, 0777, cyttsp_irq_status, cyttsp_irq_enable);
+
+static ssize_t cyttsp_fw_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d.%d.%d\n", g_bl_data.appid_lo,
+				g_bl_data.appver_hi, g_bl_data.appver_lo);
+}
+
+static DEVICE_ATTR(cyttsp_fw_ver, 0777, cyttsp_fw_show, NULL);
+
+/* firmware flashing block */
+#define BLK_SIZE     16
+#define DATA_REC_LEN 64
+#define START_ADDR   0x0b00
+#define BLK_SEED     0xff
+#define RECAL_REG    0x1b
+
+enum bl_commands {
+	BL_CMD_WRBLK     = 0x39,
+	BL_CMD_INIT      = 0x38,
+	BL_CMD_TERMINATE = 0x3b,
+};
+/* TODO: Add key as part of platform data */
+#define KEY_CS  (0 + 1 + 2 + 3 + 4 + 5 + 6 + 7)
+#define KEY {0, 1, 2, 3, 4, 5, 6, 7}
+
+static const  char _key[] = KEY;
+#define KEY_LEN sizeof(_key)
+
+static int rec_cnt;
+struct fw_record {
+	u8 seed;
+	u8 cmd;
+	u8 key[KEY_LEN];
+	u8 blk_hi;
+	u8 blk_lo;
+	u8 data[DATA_REC_LEN];
+	u8 data_cs;
+	u8 rec_cs;
+};
+#define fw_rec_size (sizeof(struct fw_record))
+
+struct cmd_record {
+	u8 reg;
+	u8 seed;
+	u8 cmd;
+	u8 key[KEY_LEN];
+};
+#define cmd_rec_size (sizeof(struct cmd_record))
+
+static struct fw_record data_record = {
+	.seed = BLK_SEED,
+	.cmd = BL_CMD_WRBLK,
+	.key = KEY,
+};
+
+static const struct cmd_record terminate_rec = {
+	.reg = 0,
+	.seed = BLK_SEED,
+	.cmd = BL_CMD_TERMINATE,
+	.key = KEY,
+};
+static const struct cmd_record initiate_rec = {
+	.reg = 0,
+	.seed = BLK_SEED,
+	.cmd = BL_CMD_INIT,
+	.key = KEY,
+};
+
+#define BL_REC1_ADDR          0x0780
+#define BL_REC2_ADDR          0x07c0
+#define BL_CHECKSUM_MASK      0x01
+
+#define ID_INFO_REC           ":40078000"
+#define ID_INFO_OFFSET_IN_REC 77
+
+#define REC_START_CHR     ':'
+#define REC_LEN_OFFSET     1
+#define REC_ADDR_HI_OFFSET 3
+#define REC_ADDR_LO_OFFSET 5
+#define REC_TYPE_OFFSET    7
+#define REC_DATA_OFFSET    9
+#define REC_LINE_SIZE	141
+
+#define NUM_CHAR_IN_HEX 2
+#define ID_INFO_REC_LEN 9
+
+static int cyttsp_soft_reset(struct cyttsp *ts)
+{
+	int retval = 0, tries = 0;
+	u8 host_reg = CY_SOFT_RESET_MODE;
+
+	do {
+		retval = i2c_smbus_write_i2c_block_data(ts->client,
+				CY_REG_BASE, sizeof(host_reg), &host_reg);
+		if (retval < 0)
+			msleep(20);
+	} while (tries++ < 10 && (retval < 0));
+
+	if (retval < 0) {
+		pr_err("%s: failed\n", __func__);
+		return retval;
+	}
+
+	tries = 0;
+	do {
+		msleep(20);
+		cyttsp_putbl(ts, 1, true, true, false);
+	} while (g_bl_data.bl_status != 0x10 &&
+		g_bl_data.bl_status != 0x11 &&
+		tries++ < 100);
+
+	if (g_bl_data.bl_status != 0x11 && g_bl_data.bl_status != 0x10)
+		return -EINVAL;
+
+	return 0;
+}
+
+static void cyttsp_exit_bl_mode(struct cyttsp *ts)
+{
+	int retval, tries = 0;
+
+	do {
+		retval = i2c_smbus_write_i2c_block_data(ts->client,
+			CY_REG_BASE, sizeof(bl_cmd), bl_cmd);
+		if (retval < 0)
+			msleep(20);
+	} while (tries++ < 10 && (retval < 0));
+}
+
+static void cyttsp_set_sysinfo_mode(struct cyttsp *ts)
+{
+	int retval, tries = 0;
+	u8 host_reg = CY_SYSINFO_MODE;
+
+	do {
+		retval = i2c_smbus_write_i2c_block_data(ts->client,
+			CY_REG_BASE, sizeof(host_reg), &host_reg);
+		if (retval < 0)
+			msleep(20);
+	} while (tries++ < 10 && (retval < 0));
+
+	/* wait for TTSP Device to complete switch to SysInfo mode */
+	if (!(retval < 0)) {
+		retval = i2c_smbus_read_i2c_block_data(ts->client,
+				CY_REG_BASE,
+				sizeof(struct cyttsp_sysinfo_data_t),
+				(u8 *)&g_sysinfo_data);
+	} else
+		pr_err("%s: failed\n", __func__);
+}
+
+static void cyttsp_set_opmode(struct cyttsp *ts)
+{
+	int retval, tries = 0;
+	u8 host_reg = CY_OP_MODE;
+
+	do {
+		retval = i2c_smbus_write_i2c_block_data(ts->client,
+				CY_REG_BASE, sizeof(host_reg), &host_reg);
+		if (retval < 0)
+			msleep(20);
+	} while (tries++ < 10 && (retval < 0));
+}
+
+static int str2uc(char *str, u8 *val)
+{
+	char substr[3];
+	unsigned long ulval;
+	int rc;
+
+	if (!str)
+		return -EINVAL;
+
+	if (strnlen(str, NUM_CHAR_IN_HEX) < 2)
+		return -EINVAL;
+
+	substr[0] = str[0];
+	substr[1] = str[1];
+	substr[2] = '\0';
+
+	rc = strict_strtoul(substr, 16, &ulval);
+	if (rc != 0)
+		return rc;
+
+	*val = (u8) ulval;
+
+	return 0;
+}
+
+static int flash_block(struct cyttsp *ts, u8 *blk, int len)
+{
+	int retval, i, tries = 0;
+	char buf[(2 * (BLK_SIZE + 1)) + 1];
+	char *p = buf;
+
+	for (i = 0; i < len; i++, p += 2)
+		sprintf(p, "%02x", blk[i]);
+	pr_debug("%s: size %d, pos %ld payload %s\n",
+		       __func__, len, (long)0, buf);
+
+	do {
+		retval = i2c_smbus_write_i2c_block_data(ts->client,
+			CY_REG_BASE, len, blk);
+		if (retval < 0)
+			msleep(20);
+	} while (tries++ < 20 && (retval < 0));
+
+	if (retval < 0) {
+		pr_err("%s: failed\n", __func__);
+		return retval;
+	}
+
+	return 0;
+}
+
+static int flash_command(struct cyttsp *ts, const struct cmd_record *record)
+{
+	return flash_block(ts, (u8 *)record, cmd_rec_size);
+}
+
+static void init_data_record(struct fw_record *rec, unsigned short addr)
+{
+	addr >>= 6;
+	rec->blk_hi = (addr >> 8) & 0xff;
+	rec->blk_lo = addr & 0xff;
+	rec->rec_cs = rec->blk_hi + rec->blk_lo +
+			(unsigned char)(BLK_SEED + BL_CMD_WRBLK + KEY_CS);
+	rec->data_cs = 0;
+}
+
+static int check_record(u8 *rec)
+{
+	int rc;
+	u16 addr;
+	u8 r_len, type, hi_off, lo_off;
+
+	rc = str2uc(rec + REC_LEN_OFFSET, &r_len);
+	if (rc < 0)
+		return rc;
+
+	rc = str2uc(rec + REC_TYPE_OFFSET, &type);
+	if (rc < 0)
+		return rc;
+
+	if (*rec != REC_START_CHR || r_len != DATA_REC_LEN || type != 0)
+		return -EINVAL;
+
+	rc = str2uc(rec + REC_ADDR_HI_OFFSET, &hi_off);
+	if (rc < 0)
+		return rc;
+
+	rc = str2uc(rec + REC_ADDR_LO_OFFSET, &lo_off);
+	if (rc < 0)
+		return rc;
+
+	addr = (hi_off << 8) | lo_off;
+
+	if (addr >= START_ADDR || addr == BL_REC1_ADDR || addr == BL_REC2_ADDR)
+		return 0;
+
+	return -EINVAL;
+}
+
+static struct fw_record *prepare_record(u8 *rec)
+{
+	int i, rc;
+	u16 addr;
+	u8 hi_off, lo_off;
+	u8 *p;
+
+	rc = str2uc(rec + REC_ADDR_HI_OFFSET, &hi_off);
+	if (rc < 0)
+		return ERR_PTR((long) rc);
+
+	rc = str2uc(rec + REC_ADDR_LO_OFFSET, &lo_off);
+	if (rc < 0)
+		return ERR_PTR((long) rc);
+
+	addr = (hi_off << 8) | lo_off;
+
+	init_data_record(&data_record, addr);
+	p = rec + REC_DATA_OFFSET;
+	for (i = 0; i < DATA_REC_LEN; i++) {
+		rc = str2uc(p, &data_record.data[i]);
+		if (rc < 0)
+			return ERR_PTR((long) rc);
+		data_record.data_cs += data_record.data[i];
+		data_record.rec_cs += data_record.data[i];
+		p += 2;
+	}
+	data_record.rec_cs += data_record.data_cs;
+
+	return &data_record;
+}
+
+static int flash_record(struct cyttsp *ts, const struct fw_record *record)
+{
+	int len = fw_rec_size;
+	int blk_len, rc;
+	u8 *rec = (u8 *)record;
+	u8 data[BLK_SIZE + 1];
+	u8 blk_offset;
+
+	for (blk_offset = 0; len; len -= blk_len) {
+		data[0] = blk_offset;
+		blk_len = len > BLK_SIZE ? BLK_SIZE : len;
+		memcpy(data + 1, rec, blk_len);
+		rec += blk_len;
+		rc = flash_block(ts, data, blk_len + 1);
+		if (rc < 0)
+			return rc;
+		blk_offset += blk_len;
+	}
+	return 0;
+}
+
+static int flash_data_rec(struct cyttsp *ts, u8 *buf)
+{
+	struct fw_record *rec;
+	int rc, tries;
+
+	if (!buf)
+		return -EINVAL;
+
+	rc = check_record(buf);
+
+	if (rc < 0) {
+		pr_debug("%s: record ignored %s", __func__, buf);
+		return 0;
+	}
+
+	rec = prepare_record(buf);
+	if (IS_ERR_OR_NULL(rec))
+		return PTR_ERR(rec);
+
+	rc = flash_record(ts, rec);
+	if (rc < 0)
+		return rc;
+
+	tries = 0;
+	do {
+		if (rec_cnt%2)
+			msleep(20);
+		cyttsp_putbl(ts, 4, true, false, false);
+	} while (g_bl_data.bl_status != 0x10 &&
+		g_bl_data.bl_status != 0x11 &&
+		tries++ < 100);
+	rec_cnt++;
+	return rc;
+}
+
+static int cyttspfw_flash_firmware(struct cyttsp *ts, const u8 *data,
+					int data_len)
+{
+	u8 *buf;
+	int i, j;
+	int rc, tries = 0;
+
+	/* initiate bootload: this will erase all the existing data */
+	rc = flash_command(ts, &initiate_rec);
+	if (rc < 0)
+		return rc;
+
+	do {
+		msleep(100);
+		cyttsp_putbl(ts, 4, true, false, false);
+	} while (g_bl_data.bl_status != 0x10 &&
+		g_bl_data.bl_status != 0x11 &&
+		tries++ < 100);
+
+	buf = kzalloc(REC_LINE_SIZE + 1, GFP_KERNEL);
+	if (!buf) {
+		pr_err("%s: no memory\n", __func__);
+		return -ENOMEM;
+	}
+
+	rec_cnt = 0;
+	/* flash data records */
+	for (i = 0, j = 0; i < data_len; i++, j++) {
+		if ((data[i] == REC_START_CHR) && j) {
+			buf[j] = 0;
+			rc = flash_data_rec(ts, buf);
+			if (rc < 0)
+				return rc;
+			j = 0;
+		}
+		buf[j] = data[i];
+	}
+
+	/* flash last data record */
+	if (j) {
+		buf[j] = 0;
+		rc = flash_data_rec(ts, buf);
+		if (rc < 0)
+			return rc;
+	}
+
+	kfree(buf);
+
+	/* termiate bootload */
+	tries = 0;
+	rc = flash_command(ts, &terminate_rec);
+	do {
+		msleep(100);
+		cyttsp_putbl(ts, 4, true, false, false);
+	} while (g_bl_data.bl_status != 0x10 &&
+		g_bl_data.bl_status != 0x11 &&
+		tries++ < 100);
+
+	return rc;
+}
+
+static int get_hex_fw_ver(u8 *p, u8 *ttspver_hi, u8 *ttspver_lo,
+			u8 *appid_hi, u8 *appid_lo, u8 *appver_hi,
+			u8 *appver_lo, u8 *cid_0, u8 *cid_1, u8 *cid_2)
+{
+	int rc;
+
+	p = p + ID_INFO_OFFSET_IN_REC;
+	rc = str2uc(p, ttspver_hi);
+	if (rc < 0)
+		return rc;
+	p += 2;
+	rc = str2uc(p, ttspver_lo);
+	if (rc < 0)
+		return rc;
+	p += 2;
+	rc = str2uc(p, appid_hi);
+	if (rc < 0)
+		return rc;
+	p += 2;
+	rc = str2uc(p, appid_lo);
+	if (rc < 0)
+		return rc;
+	p += 2;
+	rc = str2uc(p, appver_hi);
+	if (rc < 0)
+		return rc;
+	p += 2;
+	rc = str2uc(p, appver_lo);
+	if (rc < 0)
+		return rc;
+	p += 2;
+	rc = str2uc(p, cid_0);
+	if (rc < 0)
+		return rc;
+	p += 2;
+	rc = str2uc(p, cid_1);
+	if (rc < 0)
+		return rc;
+	p += 2;
+	rc = str2uc(p, cid_2);
+	if (rc < 0)
+		return rc;
+
+	return 0;
+}
+
+static void cyttspfw_flash_start(struct cyttsp *ts, const u8 *data,
+				int data_len, u8 *buf, bool force)
+{
+	int rc;
+	u8 ttspver_hi = 0, ttspver_lo = 0, fw_upgrade = 0;
+	u8 appid_hi = 0, appid_lo = 0;
+	u8 appver_hi = 0, appver_lo = 0;
+	u8 cid_0 = 0, cid_1 = 0, cid_2 = 0;
+	char *p = buf;
+
+	/* get hex firmware version */
+	rc = get_hex_fw_ver(p, &ttspver_hi, &ttspver_lo,
+		&appid_hi, &appid_lo, &appver_hi,
+		&appver_lo, &cid_0, &cid_1, &cid_2);
+
+	if (rc < 0) {
+		pr_err("%s: unable to get hex firmware version\n", __func__);
+		return;
+	}
+
+	/* disable interrupts before flashing */
+	if (ts->client->irq == 0)
+		del_timer(&ts->timer);
+	else
+		disable_irq(ts->client->irq);
+
+	rc = cancel_work_sync(&ts->work);
+
+	if (rc && ts->client->irq)
+		enable_irq(ts->client->irq);
+
+	/* enter bootloader idle mode */
+	rc = cyttsp_soft_reset(ts);
+
+	if (rc < 0) {
+		pr_err("%s: try entering into idle mode"
+				" second time\n", __func__);
+		msleep(1000);
+		rc = cyttsp_soft_reset(ts);
+	}
+
+	if (rc < 0) {
+		pr_err("%s: try again later\n", __func__);
+		return;
+	}
+
+
+	pr_info("Current firmware: %d.%d.%d", g_bl_data.appid_lo,
+				g_bl_data.appver_hi, g_bl_data.appver_lo);
+	pr_info("New firmware: %d.%d.%d", appid_lo, appver_hi, appver_lo);
+
+	if (force)
+		fw_upgrade = 1;
+	else if (!(g_bl_data.bl_status & BL_CHECKSUM_MASK) &&
+			(appid_lo == ts->platform_data->correct_fw_ver))
+		fw_upgrade = 1;
+	else
+		if ((appid_hi == g_bl_data.appid_hi) &&
+			(appid_lo == g_bl_data.appid_lo)) {
+			if (appver_hi > g_bl_data.appver_hi) {
+				fw_upgrade = 1;
+			} else if ((appver_hi == g_bl_data.appver_hi) &&
+					 (appver_lo > g_bl_data.appver_lo)) {
+					fw_upgrade = 1;
+				} else {
+					fw_upgrade = 0;
+					pr_info("%s: Firmware version "
+					"lesser/equal to existing firmware, "
+					"upgrade not needed\n", __func__);
+				}
+		} else {
+			fw_upgrade = 0;
+			pr_info("%s: Firware versions do not match, "
+						"cannot upgrade\n", __func__);
+		}
+
+	if (fw_upgrade) {
+		pr_info("%s: Starting firmware upgrade\n", __func__);
+		rc = cyttspfw_flash_firmware(ts, data, data_len);
+		if (rc < 0)
+			pr_err("%s: firmware upgrade failed\n", __func__);
+		else
+			pr_info("%s: firmware upgrade success\n", __func__);
+	}
+
+	/* enter bootloader idle mode */
+	cyttsp_soft_reset(ts);
+	/* exit bootloader mode */
+	cyttsp_exit_bl_mode(ts);
+	msleep(100);
+	/* set sysinfo details */
+	cyttsp_set_sysinfo_mode(ts);
+	/* enter application mode */
+	cyttsp_set_opmode(ts);
+
+	/* enable interrupts */
+	if (ts->client->irq == 0)
+		mod_timer(&ts->timer, jiffies + TOUCHSCREEN_TIMEOUT);
+	else
+		enable_irq(ts->client->irq);
+}
+
+static void cyttspfw_upgrade_start(struct cyttsp *ts, const u8 *data,
+					int data_len, bool force)
+{
+	int i, j;
+	u8 *buf;
+
+	buf = kzalloc(REC_LINE_SIZE + 1, GFP_KERNEL);
+	if (!buf) {
+		pr_err("%s: no memory\n", __func__);
+		return;
+	}
+
+	for (i = 0, j = 0; i < data_len; i++, j++) {
+		if ((data[i] == REC_START_CHR) && j) {
+			buf[j] = 0;
+			j = 0;
+			if (!strncmp(buf, ID_INFO_REC,
+				strnlen(ID_INFO_REC, ID_INFO_REC_LEN))) {
+				cyttspfw_flash_start(ts, data, data_len,
+							buf, force);
+				break;
+			}
+		}
+		buf[j] = data[i];
+	}
+
+	/* check in the last record of firmware */
+	if (j) {
+		buf[j] = 0;
+		if (!strncmp(buf, ID_INFO_REC,
+			strnlen(ID_INFO_REC, ID_INFO_REC_LEN))) {
+			cyttspfw_flash_start(ts, data, data_len,
+						buf, force);
+		}
+	}
+
+	kfree(buf);
+}
+
+static void cyttspfw_upgrade(struct device *dev, bool force)
+{
+	struct cyttsp *ts = dev_get_drvdata(dev);
+	const struct firmware *cyttsp_fw;
+	int retval = 0;
+
+	if (ts->is_suspended == true) {
+		pr_err("%s: in suspend state, resume it\n", __func__);
+		retval = cyttsp_resume(dev);
+		if (retval < 0) {
+			pr_err("%s: unable to resume\n", __func__);
+			return;
+		}
+	}
+
+	retval = request_firmware(&cyttsp_fw, ts->fw_fname, dev);
+	if (retval < 0) {
+		pr_err("%s: %s request failed(%d)\n", __func__,
+						ts->fw_fname, retval);
+	} else {
+		/* check and start upgrade */
+		cyttspfw_upgrade_start(ts, cyttsp_fw->data,
+				cyttsp_fw->size, force);
+		release_firmware(cyttsp_fw);
+	}
+}
+
+static ssize_t cyttsp_update_fw_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct cyttsp *ts = dev_get_drvdata(dev);
+	return snprintf(buf, 2, "%d\n", ts->cyttsp_fwloader_mode);
+}
+
+static ssize_t cyttsp_force_update_fw_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t size)
+{
+	struct cyttsp *ts = dev_get_drvdata(dev);
+	unsigned long val;
+	int rc;
+
+	if (size > 2)
+		return -EINVAL;
+
+	rc = strict_strtoul(buf, 10, &val);
+	if (rc != 0)
+		return rc;
+
+	mutex_lock(&ts->mutex);
+	if (!ts->cyttsp_fwloader_mode  && val) {
+		ts->cyttsp_fwloader_mode = 1;
+		cyttspfw_upgrade(dev, true);
+		ts->cyttsp_fwloader_mode = 0;
+	}
+	mutex_unlock(&ts->mutex);
+	return size;
+}
+
+static DEVICE_ATTR(cyttsp_force_update_fw, 0777, cyttsp_update_fw_show,
+					cyttsp_force_update_fw_store);
+
+static ssize_t cyttsp_update_fw_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t size)
+{
+	struct cyttsp *ts = dev_get_drvdata(dev);
+	unsigned long val;
+	int rc;
+
+	if (size > 2)
+		return -EINVAL;
+
+	rc = strict_strtoul(buf, 10, &val);
+	if (rc != 0)
+		return rc;
+
+	mutex_lock(&ts->mutex);
+	if (!ts->cyttsp_fwloader_mode  && val) {
+		ts->cyttsp_fwloader_mode = 1;
+		cyttspfw_upgrade(dev, false);
+		ts->cyttsp_fwloader_mode = 0;
+	}
+	mutex_unlock(&ts->mutex);
+
+	return size;
+}
+
+static DEVICE_ATTR(cyttsp_update_fw, 0777, cyttsp_update_fw_show,
+					cyttsp_update_fw_store);
+
+static ssize_t cyttsp_fw_name_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct cyttsp *ts = dev_get_drvdata(dev);
+	return snprintf(buf, FW_FNAME_LEN - 1, "%s\n", ts->fw_fname);
+}
+
+static ssize_t cyttsp_fw_name_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t size)
+{
+	struct cyttsp *ts = dev_get_drvdata(dev);
+
+	if (size > FW_FNAME_LEN - 1)
+		return -EINVAL;
+
+	strncpy(ts->fw_fname, buf, size);
+	if (ts->fw_fname[size-1] == '\n')
+		ts->fw_fname[size-1] = 0;
+
+	return size;
+}
+
+static DEVICE_ATTR(cyttsp_fw_name, 0777, cyttsp_fw_name_show,
+					cyttsp_fw_name_store);
 
 /* The cyttsp_xy_worker function reads the XY coordinates and sends them to
  * the input layer.  It is scheduled from the interrupt (or timer).
@@ -335,6 +1064,10 @@ void cyttsp_xy_worker(struct work_struct *work)
 		/* use test data? */
 		cyttsp_testdat(&g_xy_data, &tt_gen2_testray, \
 			sizeof(struct cyttsp_gen3_xydata_t));
+
+		if (ts->platform_data->disable_ghost_det &&
+				(cur_tch == CY_GEN2_GHOST))
+			cur_tch = CY_GEN2_2TOUCH;
 
 		if (pxy_gen2_data->evnt_idx == CY_GEN2_NOTOUCH) {
 			cur_tch = 0;
@@ -509,12 +1242,19 @@ void cyttsp_xy_worker(struct work_struct *work)
 			FLIP_XY(g_xy_data.x4, g_xy_data.y4);
 
 		if (rev_x) {
-			g_xy_data.x4 =
-				INVERT_X(g_xy_data.x4, ts->platform_data->maxx);
+			g_xy_data.x4 = INVERT_X(g_xy_data.x4,
+						ts->platform_data->panel_maxx);
+			if (g_xy_data.x4 < 0)
+				pr_debug("X value is negative. Please configure"
+					" maxx in platform data structure\n");
 		}
 		if (rev_y) {
-			g_xy_data.y4 =
-				INVERT_X(g_xy_data.y4, ts->platform_data->maxy);
+			g_xy_data.y4 = INVERT_X(g_xy_data.y4,
+						ts->platform_data->panel_maxy);
+			if (g_xy_data.y4 < 0)
+				pr_debug("Y value is negative. Please configure"
+					" maxy in platform data structure\n");
+
 		}
 		id = GET_TOUCH4_ID(g_xy_data.touch34_id);
 		if (ts->platform_data->use_trk_id) {
@@ -556,12 +1296,20 @@ void cyttsp_xy_worker(struct work_struct *work)
 			FLIP_XY(g_xy_data.x3, g_xy_data.y3);
 
 		if (rev_x) {
-			g_xy_data.x3 =
-				INVERT_X(g_xy_data.x3, ts->platform_data->maxx);
+			g_xy_data.x3 = INVERT_X(g_xy_data.x3,
+						ts->platform_data->panel_maxx);
+			if (g_xy_data.x3 < 0)
+				pr_debug("X value is negative. Please configure"
+					" maxx in platform data structure\n");
+
 		}
 		if (rev_y) {
-			g_xy_data.y3 =
-				INVERT_X(g_xy_data.y3, ts->platform_data->maxy);
+			g_xy_data.y3 = INVERT_X(g_xy_data.y3,
+						ts->platform_data->panel_maxy);
+			if (g_xy_data.y3 < 0)
+				pr_debug("Y value is negative. Please configure"
+					" maxy in platform data structure\n");
+
 		}
 		id = GET_TOUCH3_ID(g_xy_data.touch34_id);
 		if (ts->platform_data->use_trk_id) {
@@ -603,12 +1351,18 @@ void cyttsp_xy_worker(struct work_struct *work)
 			FLIP_XY(g_xy_data.x2, g_xy_data.y2);
 
 		if (rev_x) {
-			g_xy_data.x2 =
-				INVERT_X(g_xy_data.x2, ts->platform_data->maxx);
+			g_xy_data.x2 = INVERT_X(g_xy_data.x2,
+						ts->platform_data->panel_maxx);
+			if (g_xy_data.x2 < 0)
+				pr_debug("X value is negative. Please configure"
+					" maxx in platform data structure\n");
 		}
 		if (rev_y) {
-			g_xy_data.y2 =
-				INVERT_X(g_xy_data.y2, ts->platform_data->maxy);
+			g_xy_data.y2 = INVERT_X(g_xy_data.y2,
+						ts->platform_data->panel_maxy);
+			if (g_xy_data.y2 < 0)
+				pr_debug("Y value is negative. Please configure"
+					" maxy in platform data structure\n");
 		}
 		id = GET_TOUCH2_ID(g_xy_data.touch12_id);
 		if (ts->platform_data->use_trk_id) {
@@ -650,12 +1404,18 @@ void cyttsp_xy_worker(struct work_struct *work)
 			FLIP_XY(g_xy_data.x1, g_xy_data.y1);
 
 		if (rev_x) {
-			g_xy_data.x1 =
-				INVERT_X(g_xy_data.x1, ts->platform_data->maxx);
+			g_xy_data.x1 = INVERT_X(g_xy_data.x1,
+						ts->platform_data->panel_maxx);
+			if (g_xy_data.x1 < 0)
+				pr_debug("X value is negative. Please configure"
+					" maxx in platform data structure\n");
 		}
 		if (rev_y) {
-			g_xy_data.y1 =
-				INVERT_X(g_xy_data.y1, ts->platform_data->maxy);
+			g_xy_data.y1 = INVERT_X(g_xy_data.y1,
+						ts->platform_data->panel_maxy);
+			if (g_xy_data.y1 < 0)
+				pr_debug("Y value is negative. Please configure"
+					" maxy in platform data structure");
 		}
 		id = GET_TOUCH1_ID(g_xy_data.touch12_id);
 		if (ts->platform_data->use_trk_id) {
@@ -1655,18 +2415,18 @@ static int cyttsp_initialize(struct i2c_client *client, struct cyttsp *ts)
 	if (ts->platform_data->use_gestures)
 		set_bit(BTN_3, input_device->keybit);
 
-	input_set_abs_params(input_device,
-		ABS_X, 0, ts->platform_data->maxx, 0, 0);
-	input_set_abs_params(input_device,
-		ABS_Y, 0, ts->platform_data->maxy, 0, 0);
+	input_set_abs_params(input_device, ABS_X, ts->platform_data->disp_minx,
+		ts->platform_data->disp_maxx, 0, 0);
+	input_set_abs_params(input_device, ABS_Y, ts->platform_data->disp_miny,
+		ts->platform_data->disp_maxy, 0, 0);
 	input_set_abs_params(input_device,
 		ABS_TOOL_WIDTH, 0, CY_LARGE_TOOL_WIDTH, 0 , 0);
 	input_set_abs_params(input_device,
 		ABS_PRESSURE, 0, CY_MAXZ, 0, 0);
 	input_set_abs_params(input_device,
-		ABS_HAT0X, 0, ts->platform_data->maxx, 0, 0);
+		ABS_HAT0X, 0, ts->platform_data->panel_maxx, 0, 0);
 	input_set_abs_params(input_device,
-		ABS_HAT0Y, 0, ts->platform_data->maxy, 0, 0);
+		ABS_HAT0Y, 0, ts->platform_data->panel_maxy, 0, 0);
 	if (ts->platform_data->use_gestures) {
 		input_set_abs_params(input_device,
 			ABS_HAT1X, 0, CY_MAXZ, 0, 0);
@@ -1674,10 +2434,12 @@ static int cyttsp_initialize(struct i2c_client *client, struct cyttsp *ts)
 			ABS_HAT1Y, 0, CY_MAXZ, 0, 0);
 	}
 	if (ts->platform_data->use_mt) {
-		input_set_abs_params(input_device,
-			ABS_MT_POSITION_X, 0, ts->platform_data->maxx, 0, 0);
-		input_set_abs_params(input_device,
-			ABS_MT_POSITION_Y, 0, ts->platform_data->maxy, 0, 0);
+		input_set_abs_params(input_device, ABS_MT_POSITION_X,
+			ts->platform_data->disp_minx,
+			ts->platform_data->disp_maxx, 0, 0);
+		input_set_abs_params(input_device, ABS_MT_POSITION_Y,
+			ts->platform_data->disp_miny,
+			ts->platform_data->disp_maxy, 0, 0);
 		input_set_abs_params(input_device,
 			ABS_MT_TOUCH_MAJOR, 0, CY_MAXZ, 0, 0);
 		input_set_abs_params(input_device,
@@ -1744,9 +2506,49 @@ static int cyttsp_initialize(struct i2c_client *client, struct cyttsp *ts)
 		goto error_free_irq;
 	}
 
+	retval = device_create_file(&client->dev, &dev_attr_cyttsp_fw_ver);
+	if (retval) {
+		cyttsp_alert("sysfs entry for firmware version failed\n");
+		goto error_rm_dev_file_irq_en;
+	}
+
+	ts->cyttsp_fwloader_mode = 0;
+	retval = device_create_file(&client->dev, &dev_attr_cyttsp_update_fw);
+	if (retval) {
+		cyttsp_alert("sysfs entry for firmware update failed\n");
+		goto error_rm_dev_file_fw_ver;
+	}
+
+	retval = device_create_file(&client->dev,
+				&dev_attr_cyttsp_force_update_fw);
+	if (retval) {
+		cyttsp_alert("sysfs entry for force firmware update failed\n");
+		goto error_rm_dev_file_update_fw;
+	}
+	if (ts->platform_data->correct_fw_ver) {
+		if (g_bl_data.appid_lo != ts->platform_data->correct_fw_ver)
+			pr_warn("%s: Invalid firmware version detected;"
+				" Please update.\n", __func__);
+	}
+
+	retval = device_create_file(&client->dev,
+				&dev_attr_cyttsp_fw_name);
+	if (retval) {
+		cyttsp_alert("sysfs entry for file name selection failed\n");
+		goto error_rm_dev_file_fupdate_fw;
+	}
+
 	cyttsp_info("%s: Successful registration\n", CY_I2C_NAME);
 	goto success;
 
+error_rm_dev_file_fupdate_fw:
+	device_remove_file(&client->dev, &dev_attr_cyttsp_force_update_fw);
+error_rm_dev_file_update_fw:
+	device_remove_file(&client->dev, &dev_attr_cyttsp_update_fw);
+error_rm_dev_file_fw_ver:
+	device_remove_file(&client->dev, &dev_attr_cyttsp_fw_ver);
+error_rm_dev_file_irq_en:
+	device_remove_file(&client->dev, &dev_attr_irq_enable);
 error_free_irq:
 	cyttsp_alert("Error: Failed to register IRQ handler\n");
 	free_irq(client->irq, ts);
@@ -1776,10 +2578,23 @@ static int __devinit cyttsp_probe(struct i2c_client *client,
 		retval = -ENOMEM;
 	}
 
+	/* Enable runtime PM ops, start in ACTIVE mode */
+	error = pm_runtime_set_active(&client->dev);
+	if (error < 0)
+		dev_dbg(&client->dev, "unable to set runtime pm state\n");
+	pm_runtime_enable(&client->dev);
+
 	if (!(retval < CY_OK)) {
 		/* register driver_data */
 		ts->client = client;
 		ts->platform_data = client->dev.platform_data;
+
+		if (ts->platform_data->fw_fname)
+			strncpy(ts->fw_fname, ts->platform_data->fw_fname,
+							FW_FNAME_LEN - 1);
+		else
+			strncpy(ts->fw_fname, "cyttsp.hex", FW_FNAME_LEN - 1);
+
 		i2c_set_clientdata(client, ts);
 
 		error = cyttsp_initialize(client, ts);
@@ -1792,9 +2607,8 @@ static int __devinit cyttsp_probe(struct i2c_client *client,
 /*
 			i2c_del_driver(&cyttsp_driver);
 */
-			retval = -ENODEV;
-		} else
-			cyttsp_openlog();
+			return -ENODEV;
+		}
 	}
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
@@ -1805,6 +2619,8 @@ static int __devinit cyttsp_probe(struct i2c_client *client,
 		register_early_suspend(&ts->early_suspend);
 	}
 #endif /* CONFIG_HAS_EARLYSUSPEND */
+	device_init_wakeup(&client->dev, ts->platform_data->wakeup);
+	mutex_init(&ts->mutex);
 
 	cyttsp_info("Start Probe %s\n", \
 		(retval < CY_OK) ? "FAIL" : "PASS");
@@ -1813,13 +2629,23 @@ static int __devinit cyttsp_probe(struct i2c_client *client,
 }
 
 /* Function to manage power-on resume */
-static int cyttsp_resume(struct i2c_client *client)
+static int cyttsp_resume(struct device *dev)
 {
-	struct cyttsp *ts;
+	struct cyttsp *ts = dev_get_drvdata(dev);
 	int retval = CY_OK;
 
 	cyttsp_debug("Wake Up\n");
-	ts = (struct cyttsp *) i2c_get_clientdata(client);
+
+	if (ts->is_suspended == false) {
+		pr_err("%s: in wakeup state\n", __func__);
+		return 0;
+	}
+
+	if (device_may_wakeup(dev)) {
+		if (ts->client->irq)
+			disable_irq_wake(ts->client->irq);
+		return 0;
+	}
 
 	/* re-enable the interrupt prior to wake device */
 	if (ts->client->irq)
@@ -1828,25 +2654,28 @@ static int cyttsp_resume(struct i2c_client *client)
 	if (ts->platform_data->use_sleep &&
 		(ts->platform_data->power_state != CY_ACTIVE_STATE)) {
 		if (ts->platform_data->resume)
-			retval = ts->platform_data->resume(client);
+			retval = ts->platform_data->resume(ts->client);
+		/* take TTSP device out of bootloader mode;
+		 * switch back to TrueTouch operational mode */
 		if (!(retval < CY_OK)) {
-			/* take TTSP device out of bootloader mode;
-			 * switch back to TrueTouch operational mode */
-			if (!(retval < CY_OK)) {
-				int tries;
-				retval = i2c_smbus_write_i2c_block_data(ts->client,
-					CY_REG_BASE,
+			int tries = 0;
+			do {
+				msleep(100);
+				retval = i2c_smbus_write_i2c_block_data(
+					ts->client, CY_REG_BASE,
 					sizeof(bl_cmd), bl_cmd);
-				/* wait for TTSP Device to complete
-				 * switch to Operational mode */
-				tries = 0;
-				do {
-					mdelay(100);
-					cyttsp_putbl(ts, 16, false, false, false);
-				} while (GET_BOOTLOADERMODE(g_bl_data.bl_status) &&
-					tries++ < 100);
-				cyttsp_putbl(ts, 16, true, false, false);
-			}
+				if (retval == CY_OK)
+					break;
+			} while (tries++ < 2);
+			/* wait for TTSP Device to complete
+			 * switch to Operational mode */
+			tries = 0;
+			do {
+				msleep(100);
+				cyttsp_putbl(ts, 16, false, false, false);
+			} while (GET_BOOTLOADERMODE(g_bl_data.bl_status) &&
+				tries++ < 2);
+			cyttsp_putbl(ts, 16, true, false, false);
 		}
 	}
 
@@ -1860,6 +2689,7 @@ static int cyttsp_resume(struct i2c_client *client)
 	} else
 		retval = -ENODEV;
 
+	ts->is_suspended = false;
 	cyttsp_debug("Wake Up %s\n", \
 		(retval < CY_OK) ? "FAIL" : "PASS");
 
@@ -1868,14 +2698,33 @@ static int cyttsp_resume(struct i2c_client *client)
 
 
 /* Function to manage low power suspend */
-static int cyttsp_suspend(struct i2c_client *client, pm_message_t message)
+static int cyttsp_suspend(struct device *dev)
 {
-	struct cyttsp *ts;
+	struct cyttsp *ts = dev_get_drvdata(dev);
 	u8 sleep_mode = CY_OK;
 	int retval = CY_OK;
 
 	cyttsp_debug("Enter Sleep\n");
-	ts = (struct cyttsp *) i2c_get_clientdata(client);
+
+	if (ts->is_suspended == true) {
+		pr_err("%s: in sleep state\n", __func__);
+		return 0;
+	}
+
+	mutex_lock(&ts->mutex);
+	if (ts->cyttsp_fwloader_mode) {
+		pr_err("%s:firmware upgrade mode:"
+			"suspend not allowed\n", __func__);
+		mutex_unlock(&ts->mutex);
+		return -EBUSY;
+	}
+	mutex_unlock(&ts->mutex);
+
+	if (device_may_wakeup(dev)) {
+		if (ts->client->irq)
+			enable_irq_wake(ts->client->irq);
+		return 0;
+	}
 
 	/* disable worker */
 	if (ts->client->irq == 0)
@@ -1908,6 +2757,7 @@ static int cyttsp_suspend(struct i2c_client *client, pm_message_t message)
 			ts->platform_data->power_state = CY_LOW_PWR_STATE;
 	}
 
+	ts->is_suspended = true;
 	cyttsp_debug("Sleep Power state is %s\n", \
 		(ts->platform_data->power_state == CY_ACTIVE_STATE) ? \
 		"ACTIVE" : \
@@ -1925,9 +2775,17 @@ static int __devexit cyttsp_remove(struct i2c_client *client)
 
 	cyttsp_alert("Unregister\n");
 
+	pm_runtime_set_suspended(&client->dev);
+	pm_runtime_disable(&client->dev);
+
+	device_init_wakeup(&client->dev, 0);
 	/* clientdata registered on probe */
 	ts = i2c_get_clientdata(client);
 	device_remove_file(&ts->client->dev, &dev_attr_irq_enable);
+	device_remove_file(&client->dev, &dev_attr_cyttsp_fw_ver);
+	device_remove_file(&client->dev, &dev_attr_cyttsp_update_fw);
+	device_remove_file(&client->dev, &dev_attr_cyttsp_force_update_fw);
+	device_remove_file(&client->dev, &dev_attr_cyttsp_fw_name);
 
 	/* Start cleaning up by removing any delayed work and the timer */
 	if (cancel_delayed_work((struct delayed_work *)&ts->work) < CY_OK)
@@ -1945,6 +2803,7 @@ static int __devexit cyttsp_remove(struct i2c_client *client)
 	unregister_early_suspend(&ts->early_suspend);
 #endif /* CONFIG_HAS_EARLYSUSPEND */
 
+	mutex_destroy(&ts->mutex);
 	/* housekeeping */
 	if (ts != NULL)
 		kfree(ts);
@@ -1960,7 +2819,7 @@ static void cyttsp_early_suspend(struct early_suspend *handler)
 	struct cyttsp *ts;
 
 	ts = container_of(handler, struct cyttsp, early_suspend);
-	cyttsp_suspend(ts->client, PMSG_SUSPEND);
+	cyttsp_suspend(&ts->client->dev);
 }
 
 static void cyttsp_late_resume(struct early_suspend *handler)
@@ -1968,7 +2827,7 @@ static void cyttsp_late_resume(struct early_suspend *handler)
 	struct cyttsp *ts;
 
 	ts = container_of(handler, struct cyttsp, early_suspend);
-	cyttsp_resume(ts->client);
+	cyttsp_resume(&ts->client->dev);
 }
 #endif  /* CONFIG_HAS_EARLYSUSPEND */
 
@@ -2000,4 +2859,5 @@ static void cyttsp_exit(void)
 
 module_init(cyttsp_init);
 module_exit(cyttsp_exit);
+MODULE_FIRMWARE("cyttsp.fw");
 

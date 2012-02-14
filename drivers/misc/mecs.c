@@ -121,6 +121,7 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 	case ECOMPASS_IOC_SET_DELAY:
 		if (copy_from_user(&delay, pa, sizeof(delay)))
 			return -EFAULT;
+		ecompass_delay = delay;
 		break;
 	case ECOMPASS_IOC_GET_DELAY:
 		delay = ecompass_delay;
@@ -192,7 +193,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 	case ECOMPASS_IOC_SET_APARMS:
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
-		break;
 		/* acceleration x-axis */
 		input_set_abs_params(ecs_data_device, ABS_X, 
 			parms[0], parms[1], parms[2], parms[3]);
@@ -209,7 +209,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
 		/* magnetic raw x-axis */
-		break;
 		input_set_abs_params(ecs_data_device, ABS_HAT0X, 
 			parms[0], parms[1], parms[2], parms[3]);
 		/* magnetic raw y-axis */
@@ -225,7 +224,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
 		/* orientation yaw */
-		break;
 		input_set_abs_params(ecs_data_device, ABS_RX, 
 			parms[0], parms[1], parms[2], parms[3]);
 		break;
@@ -235,7 +233,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
 		/* orientation pitch */
-		break;
 		input_set_abs_params(ecs_data_device, ABS_RY, 
 			parms[0], parms[1], parms[2], parms[3]);
 		break;
@@ -245,7 +242,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
 		/* orientation roll */
-		break;
 		input_set_abs_params(ecs_data_device, ABS_RZ, 
 			parms[0], parms[1], parms[2], parms[3]);
 		break;

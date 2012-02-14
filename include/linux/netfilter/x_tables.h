@@ -318,18 +318,18 @@ struct xt_match
 	   non-linear skb, using skb_header_pointer and
 	   skb_ip_make_writable. */
 	bool (*match)(const struct sk_buff *skb,
-		      const struct xt_match_param *);
+		      struct xt_action_param *);
 
 	/* Called when user tries to insert an entry of this type. */
-	bool (*checkentry)(const struct xt_mtchk_param *);
+	int (*checkentry)(const struct xt_mtchk_param *);
 
 	/* Called when entry of this type deleted. */
 	void (*destroy)(const struct xt_mtdtor_param *);
-
+#ifdef CONFIG_COMPAT
 	/* Called when userspace align differs from kernel space one */
-	void (*compat_from_user)(void *dst, void *src);
-	int (*compat_to_user)(void __user *dst, void *src);
-
+	void (*compat_from_user)(void *dst, const void *src);
+	int (*compat_to_user)(void __user *dst, const void *src);
+#endif
 	/* Set this to THIS_MODULE if you are a module, otherwise NULL */
 	struct module *me;
 
@@ -338,7 +338,9 @@ struct xt_match
 
 	const char *table;
 	unsigned int matchsize;
+#ifdef CONFIG_COMPAT
 	unsigned int compatsize;
+#endif
 	unsigned int hooks;
 	unsigned short proto;
 

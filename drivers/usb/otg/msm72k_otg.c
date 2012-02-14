@@ -606,7 +606,9 @@ static int msm_otg_suspend(struct msm_otg *dev)
 	unsigned long timeout;
 	int vbus = 0;
 	unsigned ret;
+#ifdef CONFIG_USB_MSM_ACA
 	enum chg_type chg_type = atomic_read(&dev->chg_type);
+#endif
 	unsigned long flags;
 
 	disable_irq(dev->irq);

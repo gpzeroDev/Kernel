@@ -84,12 +84,13 @@
 	#define MSM_FB_SIZE		0x177000
 	#define MSM_GPU_PHYS_SIZE	SZ_2M
 	#define PMEM_KERNEL_EBI1_SIZE	0x1C000
+	
 	/* Using lower 1MB of OEMSBL memory for GPU_PHYS */
 	#define MSM_GPU_PHYS_START_ADDR	 0xD600000ul
-#endif
 
-/* Using upper 1/2MB of Apps Bootloader memory*/
-#define MSM_PMEM_AUDIO_START_ADDR	0x1C000ul
+	/* Using upper 1/2MB of Apps Bootloader memory*/
+	#define MSM_PMEM_AUDIO_START_ADDR	0x1C000ul
+#endif
 
 #define MANU_NAME			"SIMCOM"
 #define MASS_STORAGE_NAME	"SIMCOM"
@@ -115,151 +116,152 @@ static struct platform_device mass_storage_device = {
 	},
 };
 #endif
+
 #ifdef CONFIG_USB_ANDROID
-static char *usb_functions_default[] = {
-#ifdef CONFIG_USB_ANDROID_RMNET
-       "rmnet",
-#endif
-       "usb_mass_storage",
-#ifdef CONFIG_USB_F_SERIAL
-       "modem",
-       "nmea",
-#endif
-};
+	static char *usb_functions_default[] = {
+	#ifdef CONFIG_USB_ANDROID_RMNET
+		   "rmnet",
+	#endif
+		   "usb_mass_storage",
+	#ifdef CONFIG_USB_F_SERIAL
+		   "modem",
+		   "nmea",
+	#endif
+	};
 
-static char *usb_functions_default_adb[] = {
-       "usb_mass_storage",
-       "adb",
-#ifdef CONFIG_USB_ANDROID_RMNET
-       "rmnet",
-#endif
-#ifdef CONFIG_USB_F_SERIAL
-       "modem",
-       "nmea",
-#endif
-};
+	static char *usb_functions_default_adb[] = {
+		   "usb_mass_storage",
+		   "adb",
+	#ifdef CONFIG_USB_ANDROID_RMNET
+		   "rmnet",
+	#endif
+	#ifdef CONFIG_USB_F_SERIAL
+		   "modem",
+		   "nmea",
+	#endif
+	};
 
-static char *usb_functions_rndis[] = {
-#ifdef CONFIG_USB_ANDROID_RNDIS
-       "rndis",
-#endif
-};
+	static char *usb_functions_rndis[] = {
+	#ifdef CONFIG_USB_ANDROID_RNDIS
+		   "rndis",
+	#endif
+	};
 
-static char *usb_functions_rndis_adb[] = {
-#ifdef CONFIG_USB_ANDROID_RNDIS
-       "rndis",
-#endif
-       "adb",
-};
+	static char *usb_functions_rndis_adb[] = {
+	#ifdef CONFIG_USB_ANDROID_RNDIS
+		   "rndis",
+	#endif
+		   "adb",
+	};
 
-static char *usb_functions_all[] = {
-#ifdef CONFIG_USB_ANDROID_RNDIS
-       "rndis",
-#endif
-	"usb_mass_storage",
-	"adb",
-#ifdef CONFIG_USB_F_SERIAL
-       "modem",
-       "nmea",
-#endif
-#ifdef CONFIG_USB_ANDROID_RMNET
-       "rmnet",
-#endif
-#ifdef CONFIG_USB_ANDROID_ACM
-       "acm",
-#endif
-};
+	static char *usb_functions_all[] = {
+	#ifdef CONFIG_USB_ANDROID_RNDIS
+		   "rndis",
+	#endif
+		"usb_mass_storage",
+		"adb",
+	#ifdef CONFIG_USB_F_SERIAL
+		   "modem",
+		   "nmea",
+	#endif
+	#ifdef CONFIG_USB_ANDROID_RMNET
+		   "rmnet",
+	#endif
+	#ifdef CONFIG_USB_ANDROID_ACM
+		   "acm",
+	#endif
+	};
 
-static struct android_usb_product usb_products[] = {
+	static struct android_usb_product usb_products[] = {
+		{
+		    .product_id     = 0x9026,
+		    .num_functions  = ARRAY_SIZE(usb_functions_default),
+		    .functions      = usb_functions_default,
+		},
+		{
+			.product_id	= PID,
+			.num_functions	= ARRAY_SIZE(usb_functions_default_adb),
+			.functions	= usb_functions_default_adb,
+		},
+		{
+			.product_id	= 0xf00e,
+			.num_functions	= ARRAY_SIZE(usb_functions_rndis),
+			.functions	= usb_functions_rndis,
+		},
+		{
+			.product_id	= 0x9024,
+			.num_functions	= ARRAY_SIZE(usb_functions_rndis_adb),
+			.functions	= usb_functions_rndis_adb,
+		},
+	};
+
+	static struct usb_mass_storage_platform_data mass_storage_pdata = {
+		.nluns		= 1,
+		.vendor		= "Qualcomm Incorporated",
+		.product  	= "Mass storage",
+		.release	= 0x0100,
+	};
+
+	static struct platform_device usb_mass_storage_device = {
+		.name	= "usb_mass_storage",
+		.id	= -1,
+		.dev	= {
+		.platform_data = &mass_storage_pdata,
+		},
+	};
+
+	static struct usb_ether_platform_data rndis_pdata = {
+		/* ethaddr is filled by board_serialno_setup */
+		.vendorID   = 0x05C6,
+		.vendorDescr    = "Qualcomm Incorporated",
+	};
+
+	static struct platform_device rndis_device = {
+		.name	= "rndis",
+		.id	= -1,
+		.dev	= {
+		.platform_data = &rndis_pdata,
+		},
+	};
+
+	static struct android_usb_platform_data android_usb_pdata = {
+		.vendor_id	= VID,
+		.product_id	= 0x9026,
+		.version	= 0x0100,
+		.product_name		= PRUD_NAME,
+		.manufacturer_name	= MANU_NAME,
+		.num_products = ARRAY_SIZE(usb_products),
+		.products = usb_products,
+		.num_functions = ARRAY_SIZE(usb_functions_all),
+		.functions = usb_functions_all,
+		.serial_number = "1234567890ABCDEF",
+	};
+
+	static struct platform_device android_usb_device = {
+		.name	= "android_usb",
+		.id		= -1,
+		.dev	= {
+		.platform_data = &android_usb_pdata,
+		},
+	};
+
+	static int __init board_serialno_setup(char *serialno)
 	{
-        .product_id     = 0x9026,
-        .num_functions  = ARRAY_SIZE(usb_functions_default),
-        .functions      = usb_functions_default,
-	},
-	{
-		.product_id	= PID,
-		.num_functions	= ARRAY_SIZE(usb_functions_default_adb),
-		.functions	= usb_functions_default_adb,
-	},
-	{
-		.product_id	= 0xf00e,
-		.num_functions	= ARRAY_SIZE(usb_functions_rndis),
-		.functions	= usb_functions_rndis,
-	},
-	{
-		.product_id	= 0x9024,
-		.num_functions	= ARRAY_SIZE(usb_functions_rndis_adb),
-		.functions	= usb_functions_rndis_adb,
-	},
-};
+		int i;
+		char *src = serialno;
 
-static struct usb_mass_storage_platform_data mass_storage_pdata = {
-	.nluns		= 1,
-	.vendor		= "Qualcomm Incorporated",
-	.product  	= "Mass storage",
-	.release	= 0x0100,
-};
+		/* create a fake MAC address from our serial number.
+		 * first byte is 0x02 to signify locally administered.
+		 */
+		rndis_pdata.ethaddr[0] = 0x02;
+		for (i = 0; *src; i++) {
+			/* XOR the USB serial across the remaining bytes */
+			rndis_pdata.ethaddr[i % (ETH_ALEN - 1) + 1] ^= *src++;
+		}
 
-static struct platform_device usb_mass_storage_device = {
-	.name	= "usb_mass_storage",
-	.id	= -1,
-	.dev	= {
-	.platform_data = &mass_storage_pdata,
-	},
-};
-
-static struct usb_ether_platform_data rndis_pdata = {
-    /* ethaddr is filled by board_serialno_setup */
-    .vendorID   = 0x05C6,
-    .vendorDescr    = "Qualcomm Incorporated",
-};
-
-static struct platform_device rndis_device = {
-	.name	= "rndis",
-	.id	= -1,
-	.dev	= {
-	.platform_data = &rndis_pdata,
-	},
-};
-
-static struct android_usb_platform_data android_usb_pdata = {
-	.vendor_id	= VID,
-	.product_id	= 0x9026,
-	.version	= 0x0100,
-	.product_name		= PRUD_NAME,
-	.manufacturer_name	= MANU_NAME,
-	.num_products = ARRAY_SIZE(usb_products),
-	.products = usb_products,
-	.num_functions = ARRAY_SIZE(usb_functions_all),
-	.functions = usb_functions_all,
-	.serial_number = "1234567890ABCDEF",
-};
-
-static struct platform_device android_usb_device = {
-	.name	= "android_usb",
-	.id		= -1,
-	.dev	= {
-	.platform_data = &android_usb_pdata,
-	},
-};
-
-static int __init board_serialno_setup(char *serialno)
-{
-	int i;
-	char *src = serialno;
-
-	/* create a fake MAC address from our serial number.
-	 * first byte is 0x02 to signify locally administered.
-	 */
-	rndis_pdata.ethaddr[0] = 0x02;
-	for (i = 0; *src; i++) {
-		/* XOR the USB serial across the remaining bytes */
-		rndis_pdata.ethaddr[i % (ETH_ALEN - 1) + 1] ^= *src++;
+		android_usb_pdata.serial_number = serialno;
+		return 1;
 	}
-
-	android_usb_pdata.serial_number = serialno;
-	return 1;
-}
 #endif
 
 #ifdef CONFIG_USB_FUNCTION
@@ -642,7 +644,7 @@ static struct platform_device hs_device = {
 	.name   = "msm-handset",
 	.id     = -1,
 	.dev    = {
-	.platform_data = &hs_platform_data,
+		.platform_data = &hs_platform_data,
 	},
 };
 
@@ -837,7 +839,7 @@ static struct platform_device lcdc_ili9325sim_panel_device = {
 	.name   = "ili9325sim_qvga",
 	.id     = 0,
 	.dev    = {
-	.platform_data = &lcdc_ili9325sim_panel_data,
+		.platform_data = &lcdc_ili9325sim_panel_data,
 	}
 };
 
@@ -1477,6 +1479,9 @@ static struct platform_device *devices[] __initdata = {
 #ifdef CONFIG_USB_ANDROID
     &usb_mass_storage_device,
 	&rndis_device,
+#ifdef CONFIG_USB_ANDROID_DIAG
+	&usb_diag_device,
+#endif
 	&android_usb_device,
 #endif
 	&msm_device_i2c,
@@ -1521,7 +1526,6 @@ static void __init msm_fb_add_devices(void)
 
 extern struct sys_timer msm_timer;
 
-#ifndef CONFIG_TOUCHSCREEN_VRPANEL
 static ssize_t pw28_virtual_keys_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
@@ -1537,8 +1541,8 @@ static ssize_t pw28_virtual_keys_show(struct kobject *kobj,
 
 static struct kobj_attribute pw28_virtual_keys_attr = {
 	.attr = {
-	.name = "virtualkeys.synaptics-rmi-touchscreen",
-	.mode = S_IRUGO,
+		.name = "virtualkeys.synaptics-rmi-touchscreen",
+		.mode = S_IRUGO,
 	},
 	.show = &pw28_virtual_keys_show,
 };
@@ -1551,8 +1555,6 @@ static struct attribute *pw28_properties_attrs[] = {
 static struct attribute_group pw28_properties_attr_group = {
 	.attrs = pw28_properties_attrs,
 };
-
-#endif
 
 static void __init msm7x2x_init_irq(void)
 {
@@ -1905,9 +1907,8 @@ EXPORT_SYMBOL(get_sd_boot_mode);
 
 static void __init msm7x2x_init(void)
 {
-#ifndef CONFIG_TOUCHSCREEN_VRPANEL
 	struct kobject *properties_kobj;
-#endif
+
 	wlan_power(1);
 	msm_clock_init(msm_clocks_7x27, msm_num_clocks_7x27);
 	platform_add_devices(early_devices, ARRAY_SIZE(early_devices));
@@ -1999,7 +2000,6 @@ static void __init msm7x2x_init(void)
 #endif
 	msm7x2x_init_mmc();
 
-#ifndef CONFIG_TOUCHSCREEN_VRPANEL
 	properties_kobj = kobject_create_and_add("board_properties", NULL);
 	if (properties_kobj) {
 		if (sysfs_create_group(properties_kobj,
@@ -2008,7 +2008,6 @@ static void __init msm7x2x_init(void)
 	} else {
 		pr_err("failed to create board_properties\n");
 	}
-#endif
 
 	bt_power_init();
 

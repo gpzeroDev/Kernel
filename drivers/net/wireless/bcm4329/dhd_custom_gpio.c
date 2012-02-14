@@ -196,7 +196,7 @@ dhd_customer_gpio_wlan_ctrl(int onoff)
 			wake_lock(&wlan_wake_lock);
 #endif
 			/* Lets customer power to get stable */
-			OSL_DELAY(500);
+			OSL_DELAY(100);
 		break;
 	}
 }

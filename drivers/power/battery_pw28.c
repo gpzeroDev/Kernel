@@ -284,7 +284,7 @@ static struct msm_battery_info msm_batt_info = {
 	.batt_status = POWER_SUPPLY_STATUS_DISCHARGING,
 	.batt_health = POWER_SUPPLY_HEALTH_GOOD,
 	.batt_valid  = 1,
-	.battery_temp = 23,
+	.battery_temp = 20,
 	.vbatt_modify_reply_avail = 0,
 };
 
@@ -295,6 +295,8 @@ static enum power_supply_property msm_power_props[] = {
 static char *msm_power_supplied_to[] = {
 	"battery",
 };
+
+extern void hsusb_chg_vbus_draw(unsigned mA);
 
 static int msm_power_get_property(struct power_supply *psy,
 				  enum power_supply_property psp,
@@ -735,7 +737,6 @@ static void real_msm_batt_update_psy_status(void)
 			time_t temp;
 			temp = charger_time_val.tv_sec;
 			do_gettimeofday(&charger_time_val);
-			pr_info("*** stop charging after %ld minutes ***\n", (charger_time_val.tv_sec - temp) / 60);
 		}
 		supp = &msm_psy_batt;
 	}
@@ -757,24 +758,22 @@ static void msm_batt_update_psy_status(void)
 	#endif
 	real_msm_batt_update_psy_status();
 }
-extern void hsusb_chg_vbus_draw(unsigned mA);
+
 /* Control del modo de carga según a qué está conectado el USB.
    NECESARIO PARA CARGAR CORRECTAMENTE EN TODOS LOS CASOS.
  */
 void update_usb_to_gui(int i)
 {
-	struct	power_supply *supp;
-
-	pr_info("%s i=%d +++\n", __func__, i);
-
-	if (i != CHARGER_TYPE_NONE) {
+	struct	power_supply	*supp;
+	if(i!=0)
+	{
 		do_gettimeofday(&charger_time_val);
-		pr_info("*** start charging second: %ld ***\n", charger_time_val.tv_sec);
 	}
 
-	msm_batt_info.charger_type = i;
+	msm_batt_info.charger_type 	= i;
 
-	if (i == CHARGER_TYPE_USB_WALL || i == CHARGER_TYPE_USB_PC || i == CHARGER_TYPE_USB_CARKIT) {
+	if(i == USB)
+	{
 		supp = &msm_psy_usb;
 		msm_batt_info.current_chg_source = USB_CHG;			
 		msm_batt_info.current_ps = supp;
@@ -786,7 +785,9 @@ void update_usb_to_gui(int i)
 		supp = &msm_psy_batt;
 		msm_batt_info.current_ps = supp;
 		power_supply_changed(supp);
-	} else if (i == CHARGER_TYPE_WALL) {
+	}
+	else if(i == AC || i == PW_CHANGE)
+	{
 		supp = &msm_psy_ac;
 		msm_batt_info.current_chg_source = AC_CHG;			
 		msm_batt_info.current_ps = supp;
@@ -799,8 +800,11 @@ void update_usb_to_gui(int i)
 		supp = &msm_psy_batt;
 		msm_batt_info.current_ps = supp;
 		power_supply_changed(supp);
-	} else if (i == CHARGER_TYPE_NONE) {
-		if (msm_batt_info.current_chg_source == USB_CHG) {
+	}
+	else if(i == NA)
+	{
+		if(msm_batt_info.current_chg_source == USB_CHG)
+		{
 			supp = &msm_psy_usb;
 			msm_batt_info.current_chg_source = 0;			
 			msm_batt_info.current_ps = supp;
@@ -1321,13 +1325,10 @@ static int get_chg_status(void)
 static u32 calculate_capacity(u32 current_voltage)
 {
     static u32 once = 0;
-    static u32 delay = 0;
     static u32 pre_percentage =  BATTERY_INIT;
     u32 cur_percentage =  BATTERY_INIT;
 
-    static u32 pre_status = CHARGER_TYPE_NONE;
-    u32 cur_status = msm_batt_info.charger_type;
-	u8 is_chg = get_chg_status();
+    u8 is_chg = get_chg_status();
 
     //Control de carga completa
 	if(is_chg == 1)
@@ -1420,33 +1421,17 @@ static u32 calculate_capacity(u32 current_voltage)
 		once = 1;
     }
 
-    if(pre_status != cur_status)
-    {
-		delay  = 0;
-    }
+	if(is_chg == 0)
+	{  //Can only drop
+	   cur_percentage = (cur_percentage < pre_percentage) ? cur_percentage : pre_percentage;
+	   pre_percentage = cur_percentage;
+	}
+	else 
+	{  //Can only rise
+	   cur_percentage = (cur_percentage > pre_percentage) ? cur_percentage : pre_percentage;
+	   pre_percentage = cur_percentage;
+	}
 
-    if( (abs(cur_percentage - pre_percentage) > 6) && (delay < 0))
-    {   //No rise no drop
-		delay++;
-		cur_percentage = pre_percentage;
-    }
-    else 
-    {
-		delay --;
-
-		if(is_chg == 0)
-		{  //Can only drop
-		   cur_percentage = (cur_percentage < pre_percentage) ? cur_percentage : pre_percentage;
-		   pre_percentage = cur_percentage ;
-		}
-		else 
-		{  //Can only rise
-		   cur_percentage = (cur_percentage > pre_percentage) ? cur_percentage : pre_percentage;
-		   pre_percentage = cur_percentage ;
-		}
-    }
-
-    pre_status = cur_status;
     return cur_percentage;
 }
 #endif

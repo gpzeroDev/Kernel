@@ -254,7 +254,6 @@ static int quota_mt2_check(const struct xt_mtchk_param *par)
 		printk(KERN_ERR "xt_quota.3: memory alloc failure\n");
 		return -ENOMEM;
 	}
-
 	return 0;
 }
 

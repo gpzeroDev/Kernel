@@ -25,6 +25,7 @@
 #include <linux/mfd/pmic8058.h>
 #include <linux/delay.h>
 #include <linux/mutex.h>
+#include <linux/slab.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
 

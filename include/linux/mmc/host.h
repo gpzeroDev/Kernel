@@ -15,7 +15,6 @@
 
 #include <linux/mmc/core.h>
 #include <linux/mmc/pm.h>
-#include <linux/wakelock.h>
 
 struct mmc_ios {
 	unsigned int	clock;			/* clock rate */
@@ -191,9 +190,8 @@ struct mmc_host {
 
 	wait_queue_head_t	wq;
 	struct task_struct	*claimer;	/* task that has host claimed */
-	struct task_struct	*suspend_task;
 	int			claim_cnt;	/* "claim" nesting count */
-	struct wake_lock	mmc_sdio_irq_wake_lock;
+
 	struct delayed_work	detect;
 
 	const struct mmc_bus_ops *bus_ops;	/* current bus driver */

@@ -23,8 +23,8 @@
 #include <linux/io.h>
 #include <linux/platform_device.h>
 #include <linux/synaptics_i2c_rmi.h>
-#include <linux/vrpanel.h>
 #include <linux/gpio.h>
+#include <linux/slab.h>
 
 #define FINGER_NUM_CAP 5
 
@@ -69,59 +69,6 @@ struct synaptics_ts_data {
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void synaptics_ts_early_suspend(struct early_suspend *h);
 static void synaptics_ts_late_resume(struct early_suspend *h);
-#endif
-
-#if 0
-static int synaptics_dump_page(struct i2c_client *client) {
-    int i, ret;
-    
-	printk(KERN_INFO "synaptics_dump_page\n");
-    for (i = 0; i < 0x100; i++) {
-        ret = i2c_smbus_read_byte_data(client, i);
-	if (ret < 0) {
-    		printk(KERN_ERR "i2c_smbus_read_byte_data failed\n");
-    		goto err_detect_failed;
-	}
-    	printk(KERN_INFO "reg:0x%02x, val:0x%02x\n", i, ret);
-    }
-    ret = 0;
-err_detect_failed:
-    return ret;
-}
-
-static int synaptics_dump_f11_data(struct i2c_client *client) {
-    int i, ret;
-
-	printk(KERN_INFO "synaptics_dump_f11_data\n");
-    for (i = 0x15; i < 0x4f; i++) {
-        ret = i2c_smbus_read_byte_data(client, i);
-    	if (ret < 0) {
-    		printk(KERN_ERR "i2c_smbus_read_byte_data failed\n");
-    		goto err_detect_failed;
-    	}
-    	printk(KERN_INFO "reg:0x%02x, val:0x%02x\n", i, ret);
-    }
-    ret = 0;
-err_detect_failed:
-	return ret;
-}
-
-static void synaptics_dump_finger_state(struct synaptics_ts_finger *finger, int num) {
-	int i;
-
-	printk(KERN_INFO "synaptics_dump_finger_state\n");
-    for (i = 0; i < num; i++) {
-    	printk(KERN_INFO "<finger:%d>State:0x%x, Px:%d, Py:%d, Wx:%d, Wy:%d, Z:%d\n",
-            i,
-            finger[i].State, 
-            finger[i].Px, 
-            finger[i].Py, 
-            finger[i].Wx, 
-            finger[i].Wy, 
-            finger[i].Z);
-    }
-
-}
 #endif
 
 static void synaptics_recal_pos(struct synaptics_ts_data *ts, int *x, int *y) {
@@ -204,9 +151,6 @@ static void synaptics_ts_report(
     struct synaptics_ts_finger *finger,
     int num)
 {
-#ifdef CONFIG_TOUCHSCREEN_VRPANEL
-    int invalid_x = 0, invalid_y = 0;
-#endif
     int pos[num][2];
 				int f, a;
     int z = 0, w = 0;
@@ -254,21 +198,11 @@ static void synaptics_ts_report(
     
     for (f = s_num = 0; f < num; f++) {
         if (finger[f].State) {
-#ifdef CONFIG_TOUCHSCREEN_VRPANEL
-            if (pos[f][1] < 480) {
-#endif
             	input_report_abs(ts->input_dev, ABS_MT_POSITION_X, pos[f][0]);
             	input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, pos[f][1]);
                 z = finger[f].Z;
                 w = (finger[f].Wx + finger[f].Wy) / 2;
                 s_num++;
-#ifdef CONFIG_TOUCHSCREEN_VRPANEL
-            }
-            else {
-                invalid_x = pos[f][0];
-                invalid_y = pos[f][1];
-            }
-#endif
         }
 					input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
 					input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, w);
@@ -276,14 +210,6 @@ static void synaptics_ts_report(
 				}
 				input_sync(ts->input_dev);
     
-#ifdef CONFIG_TOUCHSCREEN_VRPANEL
-    if (num > s_num) {
-        VrpCallback((TouchSampleValidFlag|TouchSampleDownFlag), invalid_x, invalid_y);
-			}
-    else {
-		VrpCallback(TouchSampleValidFlag, 0, 0);
-    }
-#endif
 }
 
 static void synaptics_ts_work_func(struct work_struct *work)
@@ -649,15 +575,10 @@ static int synaptics_ts_probe(
 
 	printk(KERN_INFO "synaptics_ts_probe: Start touchscreen %s in %s mode\n", ts->input_dev->name, ts->use_irq ? "interrupt" : "polling");
 
-#ifdef CONFIG_TOUCHSCREEN_VRPANEL
-	VrpInit(ts->input_dev, NULL);
-#else
 	set_bit(KEY_HOME, ts->input_dev->keybit);
 	set_bit(KEY_MENU, ts->input_dev->keybit);
 	set_bit(KEY_BACK, ts->input_dev->keybit);
 	set_bit(KEY_SEARCH, ts->input_dev->keybit);
-#endif
-
 	return 0;
 
 err_input_register_device_failed:
@@ -710,7 +631,7 @@ static int synaptics_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 	if (ts->power) {
 		ret = ts->power(0);
 		if (ret < 0)
-			printk(KERN_ERR "synaptics_ts_resume power off failed\n");
+			printk(KERN_ERR "synaptics_ts_suspend power off failed\n");
 	}
 	return 0;
 }
@@ -774,8 +695,10 @@ static const struct i2c_device_id synaptics_ts_id[] = {
 static struct i2c_driver synaptics_ts_driver = {
 	.probe		= synaptics_ts_probe,
 	.remove		= synaptics_ts_remove,
+#ifndef CONFIG_HAS_EARLYSUSPEND
 	.suspend	= synaptics_ts_suspend,
 	.resume		= synaptics_ts_resume,
+#endif
 	.id_table	= synaptics_ts_id,
 	.driver = {
 		.name	= SYNAPTICS_I2C_RMI_NAME,
