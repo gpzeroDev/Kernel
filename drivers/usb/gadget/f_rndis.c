@@ -888,11 +888,12 @@ int rndis_function_bind_config(struct usb_configuration *c)
 	int ret;
 
 	if (!rndis_pdata) {
-		pr_err("%s: rndis_pdata null\n", __func__);
+		printk(KERN_ERR "rndis_pdata null in rndis_function_bind_config\n");
 		return -1;
 	}
 
-	pr_debug("%s: MAC: %02X:%02X:%02X:%02X:%02X:%02X\n", __func__,
+	printk(KERN_INFO
+		"rndis_function_bind_config MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
 		rndis_pdata->ethaddr[0], rndis_pdata->ethaddr[1],
 		rndis_pdata->ethaddr[2], rndis_pdata->ethaddr[3],
 		rndis_pdata->ethaddr[4], rndis_pdata->ethaddr[5]);
@@ -910,6 +911,7 @@ static struct android_usb_function rndis_function = {
 
 static int __init init(void)
 {
+	printk(KERN_INFO "f_rndis init\n");
 	platform_driver_register(&rndis_platform_driver);
 	android_register_function(&rndis_function);
 	return 0;

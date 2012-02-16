@@ -4,7 +4,6 @@
  * Sam Johnston <samj@samj.net>
  */
 #include <linux/skbuff.h>
-#include <linux/slab.h>
 #include <linux/spinlock.h>
 
 #include <linux/netfilter/x_tables.h>
@@ -23,7 +22,7 @@ MODULE_ALIAS("ip6t_quota");
 static DEFINE_SPINLOCK(quota_lock);
 
 static bool
-quota_mt(const struct sk_buff *skb, struct xt_action_param *par)
+quota_mt(const struct sk_buff *skb, const struct xt_match_param *par)
 {
 	struct xt_quota_info *q = (void *)par->matchinfo;
 	struct xt_quota_priv *priv = q->master;
@@ -44,19 +43,19 @@ quota_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	return ret;
 }
 
-static int quota_mt_check(const struct xt_mtchk_param *par)
+static bool quota_mt_check(const struct xt_mtchk_param *par)
 {
 	struct xt_quota_info *q = par->matchinfo;
 
 	if (q->flags & ~XT_QUOTA_MASK)
-		return -EINVAL;
+		return false;
 
 	q->master = kmalloc(sizeof(*q->master), GFP_KERNEL);
 	if (q->master == NULL)
-		return -ENOMEM;
+		return false;
 
 	q->master->quota = q->quota;
-	return 0;
+	return true;
 }
 
 static void quota_mt_destroy(const struct xt_mtdtor_param *par)

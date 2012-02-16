@@ -111,8 +111,6 @@ module_param_named(
 				msm_pm_smem_data->pending_irqs); \
 	} while (0)
 
-#define MAX_NR_CLKS 33
-
 /******************************************************************************
  * Sleep Modes and Parameters
  *****************************************************************************/
@@ -1774,12 +1772,6 @@ static int msm_reboot_call
 			restart_reason = 0x77665502;
 		} else if (!strcmp(cmd, "eraseflash")) {
 			restart_reason = 0x776655EF;
-   		} else if (!strcmp(cmd, "reset_rtc")) {
-			restart_reason = 0x776655F0;
-		} else if (!strncmp(cmd, "SDL1", 4)) {
-			restart_reason = 0x53444C31;    //ASCII code of "SDL1"
-		} else if (!strncmp(cmd, "SDL2", 4)) {
-			restart_reason = 0x53444C32;    //ASCII code of "SDL2"
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned code = simple_strtoul(cmd + 4, 0, 16) & 0xff;
 			restart_reason = 0x6f656d00 | code;
@@ -1898,4 +1890,4 @@ static int __init msm_pm_init(void)
 	return 0;
 }
 
-late_initcall_sync(msm_pm_init);
+late_initcall(msm_pm_init);

@@ -318,18 +318,18 @@ struct xt_match
 	   non-linear skb, using skb_header_pointer and
 	   skb_ip_make_writable. */
 	bool (*match)(const struct sk_buff *skb,
-		      struct xt_action_param *);
+		      const struct xt_match_param *);
 
 	/* Called when user tries to insert an entry of this type. */
-	int (*checkentry)(const struct xt_mtchk_param *);
+	bool (*checkentry)(const struct xt_mtchk_param *);
 
 	/* Called when entry of this type deleted. */
 	void (*destroy)(const struct xt_mtdtor_param *);
-#ifdef CONFIG_COMPAT
+
 	/* Called when userspace align differs from kernel space one */
-	void (*compat_from_user)(void *dst, const void *src);
-	int (*compat_to_user)(void __user *dst, const void *src);
-#endif
+	void (*compat_from_user)(void *dst, void *src);
+	int (*compat_to_user)(void __user *dst, void *src);
+
 	/* Set this to THIS_MODULE if you are a module, otherwise NULL */
 	struct module *me;
 
@@ -338,9 +338,45 @@ struct xt_match
 
 	const char *table;
 	unsigned int matchsize;
-#ifdef CONFIG_COMPAT
 	unsigned int compatsize;
-#endif
+	unsigned int hooks;
+	unsigned short proto;
+
+	unsigned short family;
+};
+
+struct xt_match_stats
+{
+	struct list_head list;
+
+	const char name[XT_FUNCTION_MAXNAMELEN-1];
+	u_int8_t revision;
+
+	/* Return true or false: return FALSE and set *hotdrop = 1 to
+           force immediate packet drop. */
+	/* Arguments changed since 2.6.9, as this must now handle
+	   non-linear skb, using skb_header_pointer and
+	   skb_ip_make_writable. */
+	bool (*match)(const struct sk_buff *skb,
+		      struct xt_action_param *);
+
+	/* Called when user tries to insert an entry of this type. */
+	int (*checkentry)(const struct xt_mtchk_param *);
+
+	/* Called when entry of this type deleted. */
+	void (*destroy)(const struct xt_mtdtor_param *);
+	/* Called when userspace align differs from kernel space one */
+	void (*compat_from_user)(void *dst, const void *src);
+	int (*compat_to_user)(void __user *dst, const void *src);
+	/* Set this to THIS_MODULE if you are a module, otherwise NULL */
+	struct module *me;
+
+	/* Free to use by each match */
+	unsigned long data;
+
+	const char *table;
+	unsigned int matchsize;
+	unsigned int compatsize;
 	unsigned int hooks;
 	unsigned short proto;
 

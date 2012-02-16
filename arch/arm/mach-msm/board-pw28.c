@@ -119,26 +119,32 @@ static struct platform_device mass_storage_device = {
 
 #ifdef CONFIG_USB_ANDROID
 	static char *usb_functions_default[] = {
-	#ifdef CONFIG_USB_ANDROID_RMNET
-		   "rmnet",
+	#ifdef CONFIG_USB_ANDROID_DIAG
+		"diag",
 	#endif
-		   "usb_mass_storage",
 	#ifdef CONFIG_USB_F_SERIAL
 		   "modem",
 		   "nmea",
 	#endif
+	#ifdef CONFIG_USB_ANDROID_RMNET
+		   "rmnet",
+	#endif
+		   "usb_mass_storage",
 	};
 
 	static char *usb_functions_default_adb[] = {
-		   "usb_mass_storage",
-		   "adb",
-	#ifdef CONFIG_USB_ANDROID_RMNET
-		   "rmnet",
+	#ifdef CONFIG_USB_ANDROID_DIAG
+		"diag",
 	#endif
+		   "adb",
 	#ifdef CONFIG_USB_F_SERIAL
 		   "modem",
 		   "nmea",
 	#endif
+	#ifdef CONFIG_USB_ANDROID_RMNET
+		   "rmnet",
+	#endif
+		   "usb_mass_storage",
 	};
 
 	static char *usb_functions_rndis[] = {
@@ -156,19 +162,22 @@ static struct platform_device mass_storage_device = {
 
 	static char *usb_functions_all[] = {
 	#ifdef CONFIG_USB_ANDROID_RNDIS
-		   "rndis",
+		"rndis",
 	#endif
-		"usb_mass_storage",
+	#ifdef CONFIG_USB_ANDROID_DIAG
+		"diag",
+	#endif
 		"adb",
 	#ifdef CONFIG_USB_F_SERIAL
-		   "modem",
-		   "nmea",
+		"modem",
+		"nmea",
 	#endif
 	#ifdef CONFIG_USB_ANDROID_RMNET
-		   "rmnet",
+		"rmnet",
 	#endif
+		"usb_mass_storage",
 	#ifdef CONFIG_USB_ANDROID_ACM
-		   "acm",
+		"acm",
 	#endif
 	};
 
@@ -374,63 +383,62 @@ static struct platform_device mass_storage_device = {
 #endif
 
 #ifdef CONFIG_USB_MSM_OTG_72K
-	static int hsusb_rpc_connect(int connect)
-	{
-		if (connect)
-			return msm_hsusb_rpc_connect();
-		else
-			return msm_hsusb_rpc_close();
-	}
-#endif
-
-#ifdef CONFIG_USB_MSM_OTG_72K
 	struct vreg *vreg_3p3;
 	static int msm_hsusb_ldo_init(int init)
 	{
-		if (init) {
-			/*
-			 * PHY 3.3V analog domain(VDDA33) is powered up by
-			 * an always enabled power supply (LP5900TL-3.3).
-			 * USB VREG default source is VBUS line. Turning
-			 * on USB VREG has a side effect on the USB suspend
-			 * current. Hence USB VREG is explicitly turned
-			 * off here.
-			 */
-			vreg_3p3 = vreg_get(NULL, "usb");
-			if (IS_ERR(vreg_3p3))
-				return PTR_ERR(vreg_3p3);
-			vreg_enable(vreg_3p3);
-			vreg_disable(vreg_3p3);
-			vreg_put(vreg_3p3);
-		}
+		   if (init) {
+		           vreg_3p3 = vreg_get(NULL, "usb");
+		           if (IS_ERR(vreg_3p3))
+		                   return PTR_ERR(vreg_3p3);
+		           vreg_set_level(vreg_3p3, 3300);
+		   } else
+		           vreg_put(vreg_3p3);
 
-		return 0;
+		   return 0;
+	}
+
+	static int msm_hsusb_ldo_enable(int enable)
+	{
+		   static int ldo_status;
+
+		   if (!vreg_3p3 || IS_ERR(vreg_3p3))
+		           return -ENODEV;
+
+		   if (ldo_status == enable)
+		           return 0;
+
+		   ldo_status = enable;
+
+		   pr_info("%s: %d", __func__, enable);
+
+		   if (enable)
+		           return vreg_enable(vreg_3p3);
+
+		   return vreg_disable(vreg_3p3);
 	}
 
 	static int msm_hsusb_pmic_notif_init(void (*callback)(int online), int init)
 	{
-		int ret;
+		   int ret;
 
-		if (init) {
-			ret = msm_pm_app_rpc_init(callback);
-		} else {
-			msm_pm_app_rpc_deinit(callback);
-			ret = 0;
-		}
-		return ret;
+		   if (init) {
+		           ret = msm_pm_app_rpc_init(callback);
+		   } else {
+		           msm_pm_app_rpc_deinit(callback);
+		           ret = 0;
+		   }
+		   return ret;
 	}
-
 	static struct msm_otg_platform_data msm_otg_pdata = {
-		.rpc_connect             = hsusb_rpc_connect,
-		.pmic_notif_init         = msm_hsusb_pmic_notif_init,
-		.chg_vbus_draw           = hsusb_chg_vbus_draw,
-		.chg_connected           = hsusb_chg_connected,
-		.chg_init                = hsusb_chg_init,
+		   .pmic_notif_init         = msm_hsusb_pmic_notif_init,
+		   .chg_vbus_draw           = hsusb_chg_vbus_draw,
+		   .chg_connected           = hsusb_chg_connected,
+		   .chg_init                = hsusb_chg_init,
 	#ifdef CONFIG_USB_EHCI_MSM
-		.vbus_power = msm_hsusb_vbus_power,
+		   .vbus_power = msm_hsusb_vbus_power,
 	#endif
-		.ldo_init		= msm_hsusb_ldo_init,
-		.pclk_required_during_lpm = 1
+		   .ldo_init               = msm_hsusb_ldo_init,
+		   .ldo_enable             = msm_hsusb_ldo_enable,
 	};
 
 	#ifdef CONFIG_USB_GADGET
@@ -1719,7 +1727,7 @@ static uint32_t msm_sdcc_setup_power(struct device *dv, unsigned int vdd)
 
 #ifdef CONFIG_MMC_MSM_SDC2_SUPPORT
 	static struct mmc_platform_data msm7x2x_sdc2_data = {
-		.ocr_mask	= MMC_VDD_20_21,
+		.ocr_mask	= MMC_VDD_28_29,
 		.translate_vdd	= msm_sdcc_setup_power,
 		.mmc_bus_width  = MMC_CAP_4_BIT_DATA,
 	#ifdef CONFIG_MMC_MSM_SDIO_SUPPORT
@@ -1727,7 +1735,7 @@ static uint32_t msm_sdcc_setup_power(struct device *dv, unsigned int vdd)
 	#endif
 		.msmsdcc_fmin   = 144000,
 		.msmsdcc_fmid   = 24576000,
-		.msmsdcc_fmax   = 49152000,
+		.msmsdcc_fmax   = 24576000,
 		.nonremovable   = 0,
 	#ifdef CONFIG_MMC_MSM_SDC2_DUMMY52_REQUIRED
 		.dummy52_required = 1,
@@ -1978,7 +1986,6 @@ static void __init msm7x2x_init(void)
 			msm7x27_pm_data
 			[MSM_PM_SLEEP_MODE_RAMP_DOWN_AND_WAIT_FOR_INTERRUPT].latency;
 		msm_device_gadget_peripheral.dev.platform_data = &msm_gadget_pdata;
-		msm_gadget_pdata.is_phy_status_timer_on = 1;
 	#endif
 #endif
 
@@ -2074,11 +2081,19 @@ static void __init msm_msm7x2x_allocate_memory_regions(void)
 			"pmem arena\n", size, addr, __pa(addr));
 	}
 
-	size = MSM_PMEM_AUDIO_SIZE ;
-	android_pmem_audio_pdata.start = MSM_PMEM_AUDIO_START_ADDR ;
-	android_pmem_audio_pdata.size = size;
-	pr_info("allocating %lu bytes (at %lx physical) for audio "
-		"pmem arena\n", size , MSM_PMEM_AUDIO_START_ADDR);
+	size = pmem_audio_size;
+	if (size > 0xE1000) {
+		addr = alloc_bootmem(size);
+		android_pmem_audio_pdata.start = __pa(addr);
+		android_pmem_audio_pdata.size = size;
+		pr_info("allocating %lu bytes at %p (%lx physical) for audio "
+			"pmem arena\n", size, addr, __pa(addr));
+	} else if (size) {
+		android_pmem_audio_pdata.start = MSM_PMEM_AUDIO_START_ADDR;
+		android_pmem_audio_pdata.size = size;
+		pr_info("allocating %lu bytes (at %lx physical) for audio "
+			"pmem arena\n", size , MSM_PMEM_AUDIO_START_ADDR);
+	}
 
 	size = fb_size ? : MSM_FB_SIZE;
 	addr = alloc_bootmem(size);

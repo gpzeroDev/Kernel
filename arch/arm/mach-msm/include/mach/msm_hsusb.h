@@ -113,19 +113,11 @@ enum hs_drv_amplitude {
 	HS_DRV_AMPLITUDE_75_PERCENT = (3 << 2),
 };
 
-/* used to configure the analog switch to select b/w host and peripheral */
-enum usb_switch_control {
-	USB_SWITCH_PERIPHERAL = 0,      /* Configure switch in peripheral mode*/
-	USB_SWITCH_HOST,                /* Host mode */
-	USB_SWITCH_DISABLE,             /* No mode selected, shutdown power */
-};
-
 struct msm_hsusb_gadget_platform_data {
 	int *phy_init_seq;
 	void (*phy_reset)(void);
 
 	int self_powered;
-	int is_phy_status_timer_on;
 };
 
 struct msm_hsusb_platform_data {
@@ -169,11 +161,9 @@ struct msm_otg_platform_data {
 	enum se1_gate_state	se1_gating;
 	int			phy_reset_sig_inverted;
 	int			phy_can_powercollapse;
-	int			pclk_required_during_lpm;
 
 	int (*ldo_init) (int init);
 	int (*ldo_enable) (int enable);
-	int (*ldo_set_voltage) (int mV);
 
 	u32 			swfi_latency;
 	/* pmic notfications apis */
@@ -181,7 +171,7 @@ struct msm_otg_platform_data {
 	int (*pmic_register_vbus_sn) (void (*callback)(int online));
 	void (*pmic_unregister_vbus_sn) (void (*callback)(int online));
 	int (*pmic_enable_ldo) (int);
-	void (*setup_gpio)(enum usb_switch_control mode);
+	void (*setup_gpio)(unsigned int config);
 	u8      otg_mode;
 	void (*vbus_power) (unsigned phy_info, int on);
 

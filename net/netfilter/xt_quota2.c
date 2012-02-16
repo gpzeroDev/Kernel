@@ -254,6 +254,7 @@ static int quota_mt2_check(const struct xt_mtchk_param *par)
 		printk(KERN_ERR "xt_quota.3: memory alloc failure\n");
 		return -ENOMEM;
 	}
+
 	return 0;
 }
 
@@ -318,7 +319,7 @@ quota_mt2(const struct sk_buff *skb, struct xt_action_param *par)
 	return ret;
 }
 
-static struct xt_match quota_mt2_reg[] __read_mostly = {
+static struct xt_match_stats quota_mt2_reg[] __read_mostly = {
 	{
 		.name       = "quota2",
 		.revision   = 3,
@@ -358,7 +359,7 @@ static int __init quota_mt2_init(void)
 	if (proc_xt_quota == NULL)
 		return -EACCES;
 
-	ret = xt_register_matches(quota_mt2_reg, ARRAY_SIZE(quota_mt2_reg));
+	ret = xt_register_matches((struct xt_match *)quota_mt2_reg, ARRAY_SIZE(quota_mt2_reg));
 	if (ret < 0)
 		remove_proc_entry("xt_quota", init_net.proc_net);
 	pr_debug("xt_quota2: init() %d", ret);
@@ -367,7 +368,7 @@ static int __init quota_mt2_init(void)
 
 static void __exit quota_mt2_exit(void)
 {
-	xt_unregister_matches(quota_mt2_reg, ARRAY_SIZE(quota_mt2_reg));
+	xt_unregister_matches((struct xt_match *)quota_mt2_reg, ARRAY_SIZE(quota_mt2_reg));
 	remove_proc_entry("xt_quota", init_net.proc_net);
 }
 

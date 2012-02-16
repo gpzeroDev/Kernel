@@ -265,7 +265,7 @@ static int __init create_bulk_endpoints(struct adb_dev *dev,
 	return 0;
 
 fail:
-	DBG(cdev, "could not allocate request\n");
+	printk(KERN_ERR "adb_bind() could not allocate requests\n");
 	return -1;
 }
 
@@ -411,7 +411,7 @@ static ssize_t adb_write(struct file *fp, const char __user *buf,
 
 static int adb_open(struct inode *ip, struct file *fp)
 {
-	pr_debug("adb_open\n");
+	printk(KERN_INFO "adb_open\n");
 	if (_lock(&_adb_dev->open_excl))
 		return -EBUSY;
 
@@ -425,7 +425,7 @@ static int adb_open(struct inode *ip, struct file *fp)
 
 static int adb_release(struct inode *ip, struct file *fp)
 {
-	pr_debug("adb_release\n");
+	printk(KERN_INFO "adb_release\n");
 	_unlock(&_adb_dev->open_excl);
 	return 0;
 }
@@ -452,7 +452,7 @@ static int adb_enable_open(struct inode *ip, struct file *fp)
 		return -EBUSY;
 	}
 
-	pr_debug("%s: Enabling adb\n", __func__);
+	printk(KERN_INFO "enabling adb\n");
 	android_enable_function(&_adb_dev->function, 1);
 
 	return 0;
@@ -460,7 +460,7 @@ static int adb_enable_open(struct inode *ip, struct file *fp)
 
 static int adb_enable_release(struct inode *ip, struct file *fp)
 {
-	pr_debug("%s: Disabling adb\n", __func__);
+	printk(KERN_INFO "disabling adb\n");
 	android_enable_function(&_adb_dev->function, 0);
 	atomic_dec(&adb_enable_excl);
 	return 0;
@@ -588,7 +588,7 @@ static int adb_bind_config(struct usb_configuration *c)
 	struct adb_dev *dev;
 	int ret;
 
-	pr_debug("adb_bind_config\n");
+	printk(KERN_INFO "adb_bind_config\n");
 
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)
@@ -639,7 +639,7 @@ err2:
 	misc_deregister(&adb_device);
 err1:
 	kfree(dev);
-	pr_err("adb gadget driver failed to initialize\n");
+	printk(KERN_ERR "adb gadget driver failed to initialize\n");
 	return ret;
 }
 
@@ -650,7 +650,7 @@ static struct android_usb_function adb_function = {
 
 static int __init init(void)
 {
-	pr_debug("f_adb init\n");
+	printk(KERN_INFO "f_adb init\n");
 	android_register_function(&adb_function);
 	return 0;
 }

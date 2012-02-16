@@ -608,10 +608,7 @@ static void real_msm_batt_update_psy_status(void)
 		if (charger_status == CHARGER_STATUS_GOOD ||
 		    charger_status == CHARGER_STATUS_WEAK) {
 			if (msm_batt_info.current_chg_source) {
-				if(battery_level == BATTERY_LEVEL_FULL)
-					msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_FULL;
-				else
-					msm_batt_info.batt_status = POWER_SUPPLY_STATUS_CHARGING;
+				msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_CHARGING;
 
 				/* Correct when supp==NULL */
 				if (msm_batt_info.current_chg_source & AC_CHG)
@@ -633,10 +630,7 @@ static void real_msm_batt_update_psy_status(void)
 		/* Correct charger status */
 		if (charger_type != CHARGER_TYPE_INVALID &&
 		    charger_status == CHARGER_STATUS_GOOD) {
-			if(battery_level == BATTERY_LEVEL_FULL)
-				msm_batt_info.batt_status = POWER_SUPPLY_STATUS_FULL;
-			else
-				msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_CHARGING;
+			msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_CHARGING;
 		}
 	}
 
@@ -765,10 +759,6 @@ static void msm_batt_update_psy_status(void)
 void update_usb_to_gui(int i)
 {
 	struct	power_supply	*supp;
-	if(i!=0)
-	{
-		do_gettimeofday(&charger_time_val);
-	}
 
 	msm_batt_info.charger_type 	= i;
 
@@ -825,7 +815,6 @@ void update_usb_to_gui(int i)
 		power_supply_changed(supp);
 		request_suspend_state(PM_SUSPEND_ON);
 	}
-	msm_batt_update_psy_status();
 }
 EXPORT_SYMBOL(update_usb_to_gui);
 
@@ -1361,14 +1350,6 @@ static u32 calculate_capacity(u32 current_voltage)
   			*/ 
 			msm_batt_info.batt_status = POWER_SUPPLY_STATUS_DISCHARGING;
 			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_GOOD;
-
-			//Se indica el estado de carga
-			if(msm_batt_info.current_chg_source == USB_CHG)
-				update_usb_to_gui(USB);
-			else if(msm_batt_info.current_chg_source == AC_CHG)
-				update_usb_to_gui(AC);
-			else
-				update_usb_to_gui(NA); //Sin carga
 		}
 		//Se controla el caso de 0%
 		if (current_voltage <= BATTERY_LOW) 

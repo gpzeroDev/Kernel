@@ -169,8 +169,8 @@ ipt_error(struct sk_buff *skb, const struct xt_target_param *par)
 
 /* Performance critical - called for every packet */
 static inline bool
-do_match(struct ipt_entry_match *m, struct sk_buff *skb,
-	 struct xt_action_param *par)
+do_match(struct ipt_entry_match *m, const struct sk_buff *skb,
+	 struct xt_match_param *par)
 {
 	par->match     = m->u.kernel.match;
 	par->matchinfo = m->data;
@@ -311,13 +311,14 @@ ipt_do_table(struct sk_buff *skb,
 
 	static const char nulldevname[IFNAMSIZ] __attribute__((aligned(sizeof(long))));
 	const struct iphdr *ip;
+	bool hotdrop = false;
 	/* Initializing verdict to NF_DROP keeps gcc happy. */
 	unsigned int verdict = NF_DROP;
 	const char *indev, *outdev;
 	void *table_base;
 	struct ipt_entry *e, *back;
 	struct xt_table_info *private;
-	struct xt_action_param mtpar;
+	struct xt_match_param mtpar;
 	struct xt_target_param tgpar;
 
 	/* Initialization */
@@ -332,7 +333,7 @@ ipt_do_table(struct sk_buff *skb,
 	 * match it. */
 	mtpar.fragoff = ntohs(ip->frag_off) & IP_OFFSET;
 	mtpar.thoff   = ip_hdrlen(skb);
-	mtpar.hotdrop = false;
+	mtpar.hotdrop = &hotdrop;
 	mtpar.in      = tgpar.in  = in;
 	mtpar.out     = tgpar.out = out;
 	mtpar.family  = tgpar.family = NFPROTO_IPV4;
@@ -425,13 +426,13 @@ ipt_do_table(struct sk_buff *skb,
 		else
 			/* Verdict */
 			break;
-	} while (!mtpar.hotdrop);
+	} while (!hotdrop);
 	xt_info_rdunlock_bh();
 
 #ifdef DEBUG_ALLOW_ALL
 	return NF_ACCEPT;
 #else
-	if (mtpar.hotdrop)
+	if (hotdrop)
 		return NF_DROP;
 	else return verdict;
 #endif
@@ -2135,7 +2136,7 @@ icmp_type_code_match(u_int8_t test_type, u_int8_t min_code, u_int8_t max_code,
 }
 
 static bool
-icmp_match(const struct sk_buff *skb, struct xt_action_param *par)
+icmp_match(const struct sk_buff *skb, const struct xt_match_param *par)
 {
 	const struct icmphdr *ic;
 	struct icmphdr _icmph;
@@ -2151,7 +2152,7 @@ icmp_match(const struct sk_buff *skb, struct xt_action_param *par)
 		 * can't.  Hence, no choice but to drop.
 		 */
 		duprintf("Dropping evil ICMP tinygram.\n");
-		par->hotdrop = true;
+		*par->hotdrop = true;
 		return false;
 	}
 
@@ -2162,12 +2163,12 @@ icmp_match(const struct sk_buff *skb, struct xt_action_param *par)
 				    !!(icmpinfo->invflags&IPT_ICMP_INV));
 }
 
-static int icmp_checkentry(const struct xt_mtchk_param *par)
+static bool icmp_checkentry(const struct xt_mtchk_param *par)
 {
 	const struct ipt_icmp *icmpinfo = par->matchinfo;
 
 	/* Must specify no unknown invflags */
-	return (icmpinfo->invflags & ~IPT_ICMP_INV) ? -EINVAL : 0;
+	return !(icmpinfo->invflags & ~IPT_ICMP_INV);
 }
 
 /* The built-in targets: standard (NULL) and error. */

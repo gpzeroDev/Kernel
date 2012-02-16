@@ -147,7 +147,7 @@ static void bind_functions(struct android_dev *dev)
 		if (f)
 			f->bind_config(dev->config);
 		else
-			pr_err("%s: function %s not found\n", __func__, name);
+			printk(KERN_ERR "function %s not found in bind_functions\n", name);
 	}
 }
 
@@ -155,7 +155,7 @@ static int __init android_bind_config(struct usb_configuration *c)
 {
 	struct android_dev *dev = _android_dev;
 
-	pr_debug("android_bind\n");
+	printk(KERN_DEBUG "android_bind_config\n");
 	dev->config = c;
 
 	/* bind our functions if they have all registered */
@@ -275,7 +275,7 @@ static int __init android_bind(struct usb_composite_dev *cdev)
 	/* register our configuration */
 	ret = usb_add_config(cdev, &android_config_driver);
 	if (ret) {
-		pr_err("%s: usb_add_config failed\n", __func__);
+		printk(KERN_ERR "usb_add_config failed\n");
 		return ret;
 	}
 
@@ -316,7 +316,7 @@ void android_register_function(struct android_usb_function *f)
 {
 	struct android_dev *dev = _android_dev;
 
-	pr_debug("%s: %s\n", __func__, f->name);
+	printk(KERN_INFO "android_register_function %s\n", f->name);
 	list_add_tail(&f->list, &_functions);
 	_registered_function_count++;
 
@@ -399,7 +399,7 @@ static int __init android_probe(struct platform_device *pdev)
 	struct android_dev *dev = _android_dev;
 	int result;
 
-	dev_dbg(&pdev->dev, "%s: pdata: %p\n", __func__, pdata);
+	printk(KERN_INFO "android_probe pdata: %p\n", pdata);
 
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
@@ -468,7 +468,7 @@ static int __init init(void)
 {
 	struct android_dev *dev;
 
-	pr_debug("android init\n");
+	printk(KERN_INFO "android init\n");
 
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)

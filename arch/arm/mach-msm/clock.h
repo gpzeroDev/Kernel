@@ -22,6 +22,9 @@
 
 #include "clock-pcom.h"
 
+/* Maximum number of clocks supported. */
+#define MAX_NR_CLKS	300
+
 #define CLKFLAG_INVERT			0x00000001
 #define CLKFLAG_NOINVERT		0x00000002
 #define CLKFLAG_NONEST			0x00000004
