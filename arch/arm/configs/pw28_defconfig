@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32.9
-# Thu Feb 16 21:00:42 2012
+# Thu Feb 16 21:09:03 2012
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -81,7 +81,7 @@ CONFIG_KALLSYMS=y
 # CONFIG_KALLSYMS_EXTRA_PASS is not set
 CONFIG_HOTPLUG=y
 CONFIG_PRINTK=y
-# CONFIG_BUG is not set
+CONFIG_BUG=y
 # CONFIG_SEC_LOG_BUF is not set
 CONFIG_ELF_CORE=y
 CONFIG_BASE_FULL=y
@@ -1904,6 +1904,7 @@ CONFIG_FRAME_WARN=1024
 # CONFIG_HEADERS_CHECK is not set
 # CONFIG_DEBUG_KERNEL is not set
 # CONFIG_STACKTRACE is not set
+# CONFIG_DEBUG_BUGVERBOSE is not set
 # CONFIG_DEBUG_MEMORY_INIT is not set
 # CONFIG_RCU_CPU_STALL_DETECTOR is not set
 # CONFIG_LATENCYTOP is not set

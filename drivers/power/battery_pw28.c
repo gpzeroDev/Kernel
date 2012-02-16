@@ -91,13 +91,19 @@
 #define RPC_REQ_REPLY_COMMON_HEADER_SIZE   (3 * sizeof(uint32_t))
 
 #if DEBUG
-#define DBG_LIMIT(x...) do {if (printk_ratelimit()) pr_debug(x); } while (0)
+	#define DBG_LIMIT(x...) do {if (printk_ratelimit()) pr_debug(x); } while (0)
 #else
-#define DBG_LIMIT(x...) do {} while (0)
+	#define DBG_LIMIT(x...) do {} while (0)
 #endif
 #define WAKE_UPDATE_BATT_INFO 2
 #define	be32_to_cpu_self(v)	(v = be32_to_cpu(v))
 
+#define ENTER_POWER_OFF_CHARGING	1
+#define EXIT_POWER_OFF_CHARGING		2
+extern int register_charger_usb_init(void);
+extern void unregister_charger_usb(void);
+extern int msm_proc_comm(unsigned cmd, unsigned *data1, unsigned *data2);
+static volatile int charger_state = 0;
 volatile int key_for_charger = 0;
 EXPORT_SYMBOL(key_for_charger);
 
@@ -1314,8 +1320,8 @@ static int get_chg_status(void)
 static u32 calculate_capacity(u32 current_voltage)
 {
     static u32 once = 0;
-    static u32 pre_percentage =  BATTERY_INIT;
-    u32 cur_percentage =  BATTERY_INIT;
+    static u32 pre_percentage = BATTERY_INIT;
+    u32 cur_percentage = BATTERY_INIT;
 
     u8 is_chg = get_chg_status();
 
@@ -1337,8 +1343,11 @@ static u32 calculate_capacity(u32 current_voltage)
 	if(cur_percentage == 100)
 	{
 		//Si procede, se indica que la bateria esta llena
-		if(msm_batt_info.batt_status != POWER_SUPPLY_STATUS_FULL)
-			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_FULL;
+		if(is_chg == 1)
+		{
+			if(msm_batt_info.batt_status != POWER_SUPPLY_STATUS_FULL)
+				rep_batt_chg.v1.battery_level = BATTERY_LEVEL_FULL;
+		}
 	}
     else //Control fuera de la carga completa.
     {
@@ -1402,16 +1411,17 @@ static u32 calculate_capacity(u32 current_voltage)
 		once = 1;
     }
 
-	if(is_chg == 0)
-	{  //Can only drop
-	   cur_percentage = (cur_percentage < pre_percentage) ? cur_percentage : pre_percentage;
-	   pre_percentage = cur_percentage;
-	}
-	else 
-	{  //Can only rise
-	   cur_percentage = (cur_percentage > pre_percentage) ? cur_percentage : pre_percentage;
-	   pre_percentage = cur_percentage;
-	}
+	//Descarga
+    if(is_chg == 0) 
+	{
+       cur_percentage = (cur_percentage < pre_percentage) ? cur_percentage : pre_percentage;
+       pre_percentage = cur_percentage;
+    }
+	else //Carga
+    {
+       cur_percentage = (cur_percentage > pre_percentage) ? cur_percentage : pre_percentage;
+       pre_percentage = cur_percentage;
+    }
 
     return cur_percentage;
 }
@@ -1665,21 +1675,21 @@ static int __devexit msm_batt_remove(struct platform_device *pdev)
 }
 
 #if defined CONFIG_PM
-/* Añadido resume para solventar problemas al salir del modo suspensión
-   con el cargador conectado.*/
-static int  msm_batt_resume(struct platform_device *pdev)
-{
-	int rc;
-	msm_batt_update_psy_status();
-	set_data_to_arm9(WAKE_UPDATE_BATT_INFO,(char *)&rc,sizeof(int));
-	return 0;
-}
+	/* Añadido resume para solventar problemas al salir del modo suspensión
+	   con el cargador conectado.*/
+	static int  msm_batt_resume(struct platform_device *pdev)
+	{
+		int rc;
+		msm_batt_update_psy_status();
+		set_data_to_arm9(WAKE_UPDATE_BATT_INFO,(char *)&rc,sizeof(int));
+		return 0;
+	}
 
-static int msm_batt_suspend(struct platform_device *pdev, pm_message_t state)
-{
-	msm_batt_update_psy_status();
-	return 0;
-}
+	static int msm_batt_suspend(struct platform_device *pdev, pm_message_t state)
+	{
+		msm_batt_update_psy_status();
+		return 0;
+	}
 #endif
 
 static struct platform_driver msm_batt_driver = {
@@ -1763,10 +1773,6 @@ static int __devinit msm_batt_init_rpc(void)
 }
 
 //Habilita implementación junto con batt_chg_pause del control de carga de baría de la SR de froyo
-extern int register_charger_usb_init(void);
-extern void unregister_charger_usb(void);
-extern int msm_proc_comm(unsigned cmd, unsigned *data1, unsigned *data2);
-
 ssize_t battery_misc_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
 	batt_chg_msg.key_for_charger = key_for_charger;
@@ -1781,16 +1787,11 @@ ssize_t battery_misc_read(struct file *filp, char __user *buf, size_t count, lof
 	return sizeof(batt_chg_msg_t);
 }
 
-static volatile int charger_state = 0;
-
 int get_charging_state(void)
 {
 	return charger_state;
 }
 EXPORT_SYMBOL(get_charging_state);
-
-#define ENTER_POWER_OFF_CHARGING	1
-#define EXIT_POWER_OFF_CHARGING		2
 
 int battery_misc_ioctl (struct inode *inode, struct file *flip, unsigned int cmd, unsigned long arg)
 {

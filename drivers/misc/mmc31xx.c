@@ -19,7 +19,6 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  *
  */
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -35,6 +34,7 @@
 #include <linux/delay.h>
 #include <linux/sysctl.h>
 #include <asm/uaccess.h>
+#include <linux/smp_lock.h>
 
 #include <linux/mmc31xx.h>
 
@@ -52,6 +52,7 @@
 #define MMC31XX_DEV_NAME	"mmc31xx"
 
 static u32 read_idx = 0;
+struct class *mag_class;
 
 static struct i2c_client *this_client;
 
@@ -104,6 +105,7 @@ static int mmc31xx_i2c_tx_data(char *buf, int len)
 		if (i2c_transfer(this_client->adapter, msg, 1) >= 0) {
 			break;
 		}
+		mdelay(10);
 	}
 
 	if (i >= MMC31XX_RETRY_COUNT) {
@@ -124,7 +126,7 @@ static int mmc31xx_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static int mmc31xx_ioctl(struct inode *inode, struct file *file, 
+static int mmc31xx_ioctl(struct file *file, 
 	unsigned int cmd, unsigned long arg)
 {
 	void __user *pa = (void __user *)arg;
@@ -224,6 +226,19 @@ static int mmc31xx_ioctl(struct inode *inode, struct file *file,
 	return 0;
 }
 
+
+static long mmc31xx_unlocked_ioctl(struct file *file, 
+	unsigned int cmd, unsigned long arg)
+{
+	long ret;
+
+	lock_kernel();
+	ret = mmc31xx_ioctl(file, cmd, arg);
+	unlock_kernel();
+
+	return ret;
+}
+
 static ssize_t mmc31xx_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	ssize_t ret = 0;
@@ -240,7 +255,7 @@ static struct file_operations mmc31xx_fops = {
 	.owner		= THIS_MODULE,
 	.open		= mmc31xx_open,
 	.release	= mmc31xx_release,
-	.ioctl		= mmc31xx_ioctl,
+	.unlocked_ioctl	= mmc31xx_unlocked_ioctl,
 };
 
 static struct miscdevice mmc31xx_device = {
@@ -315,13 +330,25 @@ static struct i2c_driver mmc31xx_driver = {
 
 static int __init mmc31xx_init(void)
 {
-	pr_info("mmc31xx driver: init\n");
+	struct device *dev_t;
+	printk(KERN_DEBUG "mmc31xx driver: init\n");
+	mag_class = class_create(THIS_MODULE, "magnetic");
+
+	if (IS_ERR(mag_class)) 
+		return PTR_ERR( mag_class );
+
+	dev_t = device_create( mag_class, NULL, 0, "%s", "mmc31xx");
+
+	if (IS_ERR(dev_t)) 
+	{
+		return PTR_ERR(dev_t);
+	}
 	return i2c_add_driver(&mmc31xx_driver);
 }
 
 static void __exit mmc31xx_exit(void)
 {
-	pr_info("mmc31xx driver: exit\n");
+	printk(KERN_DEBUG "mmc31xx driver: exit\n");
 	i2c_del_driver(&mmc31xx_driver);
 }
 
