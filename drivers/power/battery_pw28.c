@@ -73,11 +73,7 @@
 /* Entre 3170 y 3190 se apaga, el mínimo seguro es 3291
    para que el framework pueda apagarlo por su cuenta*/
 #define BATTERY_LOW 		3291
-#define BATTERY_HIGH  		4160
-#define USB 2
-#define AC  1
-#define NA  0
-#define PW_CHANGE 3
+#define BATTERY_HIGH  		4161
 
 #define ONCRPC_CHG_GET_GENERAL_STATUS_PROC 	12
 #define ONCRPC_CHARGER_API_VERSIONS_PROC 	0xffffffff
@@ -107,9 +103,6 @@ static volatile int charger_state = 0;
 volatile int key_for_charger = 0;
 EXPORT_SYMBOL(key_for_charger);
 
-struct input_dev *wake_input_dev;
-struct timeval charger_time_val;
-
 typedef struct batt_chg_msg {
 	u32	charger_status;
 	u32	charger_type;
@@ -119,7 +112,6 @@ typedef struct batt_chg_msg {
 	u32	battery_temp;
 	int key_for_charger;
 }batt_chg_msg_t;
-struct input_dev *wake_input_dev;
 volatile batt_chg_msg_t batt_chg_msg;
 struct timeval charger_time_val;
 
@@ -359,15 +351,13 @@ static enum power_supply_property msm_batt_power_props[] = {
 
 #ifdef CONFIG_CUSTOM_BATTERY_PERCENT_FOR_PW28
 	#define BATTERY_HIGH_CHG 	4221 //Máximo (mínimo) que cumplen TODOS los ZERO.
-	#define BATTERY_INIT		99
-	#define BATTERY_CHG_PERCENT 10
 
 	#define BATTERY_PERCENT_0   0 
 	#define BATTERY_PERCENT_1   15
 	#define BATTERY_PERCENT_2   30
 	#define BATTERY_PERCENT_3   55
 	#define BATTERY_PERCENT_4   85
-	#define BATTERY_PERCENT_5   99 
+	#define BATTERY_PERCENT_5   100 
 
 	#define BATTERY_LEVEL_0     BATTERY_LOW
 	#define BATTERY_LEVEL_1     3655
@@ -376,7 +366,7 @@ static enum power_supply_property msm_batt_power_props[] = {
 	#define BATTERY_LEVEL_4     4000
 	#define BATTERY_LEVEL_5     (BATTERY_HIGH)
 
-	#define BATTERY_CHG_LEVEL_0 BATTERY_LOW+100
+	#define BATTERY_CHG_LEVEL_0 BATTERY_LOW + 100
 	#define BATTERY_CHG_LEVEL_1 3880
 	#define BATTERY_CHG_LEVEL_2 3950
 	#define BATTERY_CHG_LEVEL_3 4040
@@ -546,10 +536,6 @@ static void real_msm_batt_update_psy_status(void)
 			battery_status = BATTERY_STATUS_INVALID;
 	}
 
-	#ifdef CONFIG_CUSTOM_BATTERY_PERCENT_FOR_PW28
-		calculate_capacity(battery_voltage);
-	#endif    
-
 	if (charger_status == msm_batt_info.charger_status &&
 	    charger_type == msm_batt_info.charger_type &&
 	    battery_status == msm_batt_info.battery_status &&
@@ -578,6 +564,7 @@ static void real_msm_batt_update_psy_status(void)
 			 battery_status, BATTERY_STATUS_GOOD, battery_level);
 		battery_status = BATTERY_STATUS_GOOD;
 	}
+
 	if (msm_batt_info.charger_type != charger_type) {
 		if (charger_type == CHARGER_TYPE_USB_PC ||
 		    charger_type == CHARGER_TYPE_USB_CARKIT) {
@@ -588,7 +575,7 @@ static void real_msm_batt_update_psy_status(void)
     	   		   charger_type == CHARGER_TYPE_WALL) {
 			DBG_LIMIT("BATT: AC Wall changer plugged in\n");
 			msm_batt_info.current_chg_source = AC_CHG;
-			supp = &msm_psy_ac;
+			supp = &msm_psy_usb;
 		} else {
 			if (msm_batt_info.current_chg_source & AC_CHG)
 				DBG_LIMIT("BATT: AC Wall charger removed\n");
@@ -617,21 +604,13 @@ static void real_msm_batt_update_psy_status(void)
 				msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_CHARGING;
 
 				/* Correct when supp==NULL */
-				if (msm_batt_info.current_chg_source & AC_CHG)
-					supp = &msm_psy_ac;
-				else
-					supp = &msm_psy_usb;
+				supp = &msm_psy_usb;
 			}
 		} else {
 			DBG_LIMIT("BATT: No charging.\n");
-			msm_batt_info.batt_status =
-				POWER_SUPPLY_STATUS_NOT_CHARGING;
+			msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_NOT_CHARGING;
 			supp = &msm_psy_batt;
 		}
-		#ifdef CONFIG_CUSTOM_BATTERY_PERCENT_FOR_PW28
-			rep_batt_chg.v1.battery_voltage = msm_batt_get_vbatt_voltage();
-			battery_voltage = rep_batt_chg.v1.battery_voltage;
-		#endif  
 	} else {
 		/* Correct charger status */
 		if (charger_type != CHARGER_TYPE_INVALID &&
@@ -639,6 +618,11 @@ static void real_msm_batt_update_psy_status(void)
 			msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_CHARGING;
 		}
 	}
+
+	#ifdef CONFIG_CUSTOM_BATTERY_PERCENT_FOR_PW28
+		rep_batt_chg.v1.battery_voltage = msm_batt_get_vbatt_voltage();
+		battery_voltage = rep_batt_chg.v1.battery_voltage;
+	#endif  
 
 	/* Correct battery voltage and status */
 	if (!battery_voltage) {
@@ -695,10 +679,7 @@ static void real_msm_batt_update_psy_status(void)
 
 		if (!supp) {
 			if (msm_batt_info.current_chg_source) {
-				if (msm_batt_info.current_chg_source & AC_CHG)
-					supp = &msm_psy_ac;
-				else
-					supp = &msm_psy_usb;
+				supp = &msm_psy_usb;
 			} else
 				supp = &msm_psy_batt;
 		}
@@ -753,76 +734,11 @@ static void real_msm_batt_update_psy_status(void)
 static void msm_batt_update_psy_status(void)
 {
 	#ifdef CONFIG_CUSTOM_BATTERY_PERCENT_FOR_PW28
-		//Recálculo de voltaje al resumir para evitar picos de voltaje.
+		//Recálculo de voltaje al resumir para disminuir picos de voltaje.
 		rep_batt_chg.v1.battery_voltage = msm_batt_get_vbatt_voltage();
 	#endif
 	real_msm_batt_update_psy_status();
 }
-
-/* Control del modo de carga según a qué está conectado el USB.
-   NECESARIO PARA CARGAR CORRECTAMENTE EN TODOS LOS CASOS.
- */
-void update_usb_to_gui(int i)
-{
-	struct	power_supply	*supp;
-
-	msm_batt_info.charger_type 	= i;
-
-	if(i == USB)
-	{
-		supp = &msm_psy_usb;
-		msm_batt_info.current_chg_source = USB_CHG;			
-		msm_batt_info.current_ps = supp;
-		power_supply_changed(supp);
-		
-		hsusb_chg_vbus_draw(500);
-		
-		msm_batt_info.batt_status = POWER_SUPPLY_STATUS_CHARGING;
-		supp = &msm_psy_batt;
-		msm_batt_info.current_ps = supp;
-		power_supply_changed(supp);
-	}
-	else if(i == AC || i == PW_CHANGE)
-	{
-		supp = &msm_psy_ac;
-		msm_batt_info.current_chg_source = AC_CHG;			
-		msm_batt_info.current_ps = supp;
-		power_supply_changed(supp);
-	
-		if(i == AC)
-			hsusb_chg_vbus_draw(500);
-	
-		msm_batt_info.batt_status = POWER_SUPPLY_STATUS_CHARGING;
-		supp = &msm_psy_batt;
-		msm_batt_info.current_ps = supp;
-		power_supply_changed(supp);
-	}
-	else if(i == NA)
-	{
-		if(msm_batt_info.current_chg_source == USB_CHG)
-		{
-			supp = &msm_psy_usb;
-			msm_batt_info.current_chg_source = 0;			
-			msm_batt_info.current_ps = supp;
-			power_supply_changed(supp);
-
-		}
-		else if(msm_batt_info.current_chg_source == AC_CHG)
-		{
-			supp = &msm_psy_ac;
-			msm_batt_info.current_chg_source = 0;			
-			msm_batt_info.current_ps = supp;
-			power_supply_changed(supp);
-		}
-
-		msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_NOT_CHARGING;	
-		supp = &msm_psy_batt;
-		msm_batt_info.current_ps = supp;
-		power_supply_changed(supp);
-		request_suspend_state(PM_SUSPEND_ON);
-	}
-}
-EXPORT_SYMBOL(update_usb_to_gui);
 
 void update_chg_to_gui(int i)
 {
@@ -1145,8 +1061,6 @@ static int msm_batt_register(u32 desired_batt_voltage,
 {
 	struct batt_client_registration_req batt_reg_req;
 	struct batt_client_registration_rep batt_reg_rep;
-    void *request;
-    void *reply;
 	int rc;
 
 	batt_reg_req.desired_batt_voltage = desired_batt_voltage;
@@ -1155,13 +1069,11 @@ static int msm_batt_register(u32 desired_batt_voltage,
 	batt_reg_req.cb_data = cb_data;
 	batt_reg_req.more_data = 1;
 	batt_reg_req.batt_error = 0;
-    request = &batt_reg_req;
-    reply = &batt_reg_rep;
 
 	rc = msm_rpc_client_req(msm_batt_info.batt_client,
 							BATTERY_REGISTER_PROC,
-                            msm_batt_register_arg_func, request,
-                            msm_batt_register_ret_func, reply,
+                            msm_batt_register_arg_func, &batt_reg_req,
+                            msm_batt_register_ret_func, &batt_reg_rep,
 							msecs_to_jiffies(BATT_RPC_TIMEOUT));
 
 	if (rc < 0) {
@@ -1299,76 +1211,46 @@ static u32 msm_batt_capacity(u32 current_voltage)
 	Control de estado de carga
 	Retorno: true en caso de cargar, false si no está conectado.
 */
-static int get_chg_status(void)
+bool get_chg_status(void)
 {
 	u32 type = rep_batt_chg.v1.charger_type;
-	int result = 0;
-	if ((type == CHARGER_TYPE_WALL || 
-		type == CHARGER_TYPE_USB_WALL ||
-		type == CHARGER_TYPE_USB_PC ||
-		type == CHARGER_TYPE_USB_CARKIT) || msm_batt_info.batt_status == POWER_SUPPLY_STATUS_CHARGING)
-		result = 1;
 
-	//pr_err("%s: estado de carga = %d\n", __func__, result);
-	return result;
+	return ((type == CHARGER_TYPE_WALL || 
+			type == CHARGER_TYPE_USB_WALL ||
+			type == CHARGER_TYPE_USB_PC ||
+			type == CHARGER_TYPE_USB_CARKIT) || msm_batt_info.batt_status == POWER_SUPPLY_STATUS_CHARGING);
 }
 
 /* Cálculo de batería para Geeksphone ZERO.
    A su vez, controla los estados de carga de la batería para indicarselos de forma
    correcta al framework.
  */
-static u32 calculate_capacity(u32 current_voltage)
+u32 calculate_capacity(u32 current_voltage)
 {
     static u32 once = 0;
-    static u32 pre_percentage = BATTERY_INIT;
-    u32 cur_percentage = BATTERY_INIT;
+    static u32 pre_percentage = BATTERY_PERCENT_5;
+    u32 cur_percentage = BATTERY_PERCENT_5;
 
-    u8 is_chg = get_chg_status();
+    bool is_chg = get_chg_status();
 
-    //Control de carga completa
-	if(is_chg == 1)
+	rep_batt_chg.v1.battery_level = BATTERY_LEVEL_GOOD;
+
+	//Se controla el caso de 0%
+	if (current_voltage <= BATTERY_LOW) 
 	{
+		cur_percentage = 0;
+	} 
+	else //Se realiza el cálculo para el resto de porcentajes
+	{
+		//Control de carga completa
 		if(current_voltage >= BATTERY_HIGH_CHG)
 		{
 			cur_percentage = 100;
 		}
-	}
-	else
-	{
-		if(current_voltage >= BATTERY_HIGH)
-		{
-			cur_percentage = 100;
-		}
-	}
-	if(cur_percentage == 100)
-	{
-		//Si procede, se indica que la bateria esta llena
-		if(is_chg == 1)
-		{
-			if(msm_batt_info.batt_status != POWER_SUPPLY_STATUS_FULL)
-				rep_batt_chg.v1.battery_level = BATTERY_LEVEL_FULL;
-		}
-	}
-    else //Control fuera de la carga completa.
-    {
-		//Si procede se cambia el estado de carga de la batería
-		if(msm_batt_info.batt_status == POWER_SUPPLY_STATUS_FULL)
-		{
-			/* Llegado a éste punto sólo puede ser una descarga, en caso de no serlo,			
-			   indicaría el modo de carga por USB o por AC
-  			*/ 
-			msm_batt_info.batt_status = POWER_SUPPLY_STATUS_DISCHARGING;
-			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_GOOD;
-		}
-		//Se controla el caso de 0%
-		if (current_voltage <= BATTERY_LOW) 
-		{
-			cur_percentage = 0;
-		} 
-		else //Se realiza el cálculo para el resto de porcentajes
+		else
 		{
 			//En el caso de estar en descarga
-			if(is_chg == 0)
+			if(!is_chg)
 			{
 				if (current_voltage <= BATTERY_LEVEL_0)
 					cur_percentage =  BATTERY_PERCENT_0;
@@ -1674,31 +1556,9 @@ static int __devexit msm_batt_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#if defined CONFIG_PM
-	/* Añadido resume para solventar problemas al salir del modo suspensión
-	   con el cargador conectado.*/
-	static int  msm_batt_resume(struct platform_device *pdev)
-	{
-		int rc;
-		msm_batt_update_psy_status();
-		set_data_to_arm9(WAKE_UPDATE_BATT_INFO,(char *)&rc,sizeof(int));
-		return 0;
-	}
-
-	static int msm_batt_suspend(struct platform_device *pdev, pm_message_t state)
-	{
-		msm_batt_update_psy_status();
-		return 0;
-	}
-#endif
-
 static struct platform_driver msm_batt_driver = {
 	.probe = msm_batt_probe,
 	.remove = __devexit_p(msm_batt_remove),
-#if defined CONFIG_PM
-	.suspend = msm_batt_suspend,
-	.resume = msm_batt_resume,
-#endif
 	.driver = {
 		   .name = "msm-battery",
 		   .owner = THIS_MODULE,

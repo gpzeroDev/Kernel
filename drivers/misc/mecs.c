@@ -115,6 +115,8 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 	int parms[4];
 	int ypr[16];
 
+	//pr_info("ecompass ecs_ctrl_ioctl++ 0x%x\n",cmd);
+
 	switch (cmd) {
 	case ECOMPASS_IOC_SET_MODE:
 		break;
@@ -279,9 +281,9 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 			input_report_abs(ecs_data_device, ABS_RUDDER, ypr[11]);
 		}
 
-		/* Report proximit sensor information */
+		/* Report proximity sensor information */
 		if (atomic_read(&p_flag)) {
-			input_report_abs(ecs_data_device, ABS_DISTANCE, ypr[12]);
+			input_report_abs(ecs_data_device, ABS_DISTANCE, ypr[12] < 110 ? ypr[12] : 110);
 			input_report_abs(ecs_data_device, ABS_TOOL_WIDTH, ypr[13]);
 		}
         
@@ -333,11 +335,9 @@ static int __init ecompass_init(void)
 	/* acceleration x-axis */
 	input_set_abs_params(ecs_data_device, ABS_X, 
 		-32768*4, 32768*4, 0, 0);
-
 	/* acceleration y-axis */
 	input_set_abs_params(ecs_data_device, ABS_Y, 
 		-32768*4, 32768*4, 0, 0);
-
 	/* acceleration z-axis */
 	input_set_abs_params(ecs_data_device, ABS_Z, 
 		-32768*4, 32768*4, 0, 0);
@@ -345,32 +345,28 @@ static int __init ecompass_init(void)
 	/* 32768 == 1gauss, range -4gauss ~ +4gauss */
 	/* magnetic raw x-axis */
 	input_set_abs_params(ecs_data_device, ABS_HAT0X, 
-		0, 0, 0, 0);
-
+		-32768*4, 32768*4, 0, 0);
 	/* magnetic raw y-axis */
 	input_set_abs_params(ecs_data_device, ABS_HAT0Y, 
-		0, 0, 0, 0);
-
+		-32768*4, 32768*4, 0, 0);
 	/* magnetic raw z-axis */
 	input_set_abs_params(ecs_data_device, ABS_BRAKE, 
-		0, 0, 0, 0);
+		-32768*4, 32768*4, 0, 0);
 
 	/* 65536 == 360degree */
 	/* orientation yaw, 0 ~ 360 */
 	input_set_abs_params(ecs_data_device, ABS_RX, 
 		0, 65536, 0, 0);
-
 	/* orientation pitch, -180 ~ 180 */
 	input_set_abs_params(ecs_data_device, ABS_RY, 
 		-65536/2, 65536/2, 0, 0);
-
 	/* orientation roll, -90 ~ 90 */
 	input_set_abs_params(ecs_data_device, ABS_RZ, 
 		-65536/4, 65536/4, 0, 0);
 
 	/* proximity distance, 1 ~ 110 mm*/
 	input_set_abs_params(ecs_data_device, ABS_DISTANCE, 
-		1, 30, 0, 0);
+		1, 110, 0, 0);
 
 	/* ambient light lux, 5 ~ 65535 Lux*/
 	input_set_abs_params(ecs_data_device, ABS_VOLUME, 

@@ -13,7 +13,6 @@
  *
  */
 
-#include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
@@ -125,11 +124,12 @@ static void ts_update_pen_state(struct ts *ts, int x, int y, int pressure)
 {
 	if (pressure) {
 #ifdef CONFIG_BOARD_PW28
-		u32 lcd_x = (36157 * x - 2530990) / 65536;
-		u32 lcd_y = (55188 * y - 1655640) / 65536;
-
+		u32 lcd_x, lcd_y;
 		ts_raw_x = x;
 		ts_raw_y = y;
+
+		lcd_x = (36157 * x - 2530990) / 65536;
+		lcd_y = (55188 * y - 1655640) / 65536;
 
 		if (lcd_x > X_MAX) lcd_x = X_MAX;
 		if (lcd_y > Y_MAX) lcd_y = Y_MAX;

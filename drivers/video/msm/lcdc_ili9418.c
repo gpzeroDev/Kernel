@@ -79,7 +79,7 @@ struct ili9325sim_state_type{
 
 static struct ili9325sim_state_type ili9325sim_state = { 0 };
 static struct msm_panel_common_pdata *lcdc_ili9325sim_pdata;
-static int lcdc_ili9325sim_panel_on(struct platform_device *pdev);
+int lcdc_ili9325sim_panel_on(struct platform_device *pdev);
 
 
 /*===========================================================================
@@ -332,7 +332,7 @@ static void ili9325sim_disp_on(void)
 	}
 }
 
-static int lcdc_ili9325sim_panel_on(struct platform_device *pdev)
+int lcdc_ili9325sim_panel_on(struct platform_device *pdev)
 {
 	if (!ili9325sim_state.disp_initialized) {
 		/* Configure reset GPIO that drives DAC */

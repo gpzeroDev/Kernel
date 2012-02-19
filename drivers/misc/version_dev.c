@@ -8,7 +8,6 @@
 #include <linux/uts.h>
 #include <linux/utsname.h>
 
-
 ssize_t version_misc_read(struct file *filp, char __user * buf, size_t count,
 			  loff_t * f_pos)
 {

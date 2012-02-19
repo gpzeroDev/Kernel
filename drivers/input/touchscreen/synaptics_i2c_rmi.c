@@ -24,7 +24,6 @@
 #include <linux/platform_device.h>
 #include <linux/synaptics_i2c_rmi.h>
 #include <linux/gpio.h>
-#include <linux/slab.h>
 
 #define FINGER_NUM_CAP 5
 
@@ -63,7 +62,7 @@ struct synaptics_ts_data {
 	uint32_t flags;
 	int (*power)(int on);
 	struct early_suspend early_suspend;
-    struct synaptics_ts_finger finger[12];
+	struct synaptics_ts_finger finger[12];
 };
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
@@ -101,7 +100,7 @@ static void synaptics_scan_finger_state(struct synaptics_ts_finger *finger, u8 *
     for (i = 1; i >= 0; i--) {
         state <<= 8;
         state |= data[i];
-			}
+    }
 
     data = data + 2;
     for (i = 0; i < FINGER_NUM_CAP; i++) {
@@ -127,7 +126,7 @@ static int synaptics_get_fingers(const struct synaptics_ts_finger *all, struct s
             count++;
             finger++;
             if (count > num) {
-				break;
+                break;
             }
         }
         all++;
@@ -152,47 +151,47 @@ static void synaptics_ts_report(
     int num)
 {
     int pos[num][2];
-				int f, a;
+    int f, a;
     int z = 0, w = 0;
     static int s_num;
-
+    
     for (f = 0; f < num; f++) {
-					uint32_t flip_flag = SYNAPTICS_FLIP_X;
-					for (a = 0; a < 2; a++) {
+    	uint32_t flip_flag = SYNAPTICS_FLIP_X;
+    	for (a = 0; a < 2; a++) {
     		int p = a ? finger[f].Py : finger[f].Px;
-						if (ts->flags & flip_flag)
-							p = ts->max[a] - p;
-						if (ts->flags & SYNAPTICS_SNAP_TO_INACTIVE_EDGE) {
-							if (ts->snap_state[f][a]) {
-								if (p <= ts->snap_down_off[a])
-									p = ts->snap_down[a];
-								else if (p >= ts->snap_up_off[a])
-									p = ts->snap_up[a];
-								else
-									ts->snap_state[f][a] = 0;
-							} else {
-								if (p <= ts->snap_down_on[a]) {
-									p = ts->snap_down[a];
-									ts->snap_state[f][a] = 1;
-								} else if (p >= ts->snap_up_on[a]) {
-									p = ts->snap_up[a];
-									ts->snap_state[f][a] = 1;
-								}
-							}
-						}
-						pos[f][a] = p;
-						flip_flag <<= 1;
-					}
-					if (ts->flags & SYNAPTICS_SWAP_XY)
-						swap(pos[f][0], pos[f][1]);
+    		if (ts->flags & flip_flag)
+    			p = ts->max[a] - p;
+    		if (ts->flags & SYNAPTICS_SNAP_TO_INACTIVE_EDGE) {
+    			if (ts->snap_state[f][a]) {
+    				if (p <= ts->snap_down_off[a])
+    					p = ts->snap_down[a];
+    				else if (p >= ts->snap_up_off[a])
+    					p = ts->snap_up[a];
+    				else
+    					ts->snap_state[f][a] = 0;
+    			} else {
+    				if (p <= ts->snap_down_on[a]) {
+    					p = ts->snap_down[a];
+    					ts->snap_state[f][a] = 1;
+    				} else if (p >= ts->snap_up_on[a]) {
+    					p = ts->snap_up[a];
+    					ts->snap_state[f][a] = 1;
+    				}
+    			}
+    		}
+    		pos[f][a] = p;
+    		flip_flag <<= 1;
+    	}
+    	if (ts->flags & SYNAPTICS_SWAP_XY)
+    		swap(pos[f][0], pos[f][1]);
         synaptics_recal_pos(ts, &pos[f][0], &pos[f][1]);
-				}
-
+    }
+    
     if (s_num > num) {
         for (f = 0; f < (s_num - num); f++) {
-				input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
-				input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, w);
-				input_mt_sync(ts->input_dev);
+            input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
+            input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, w);
+            input_mt_sync(ts->input_dev);
         }
     }
     
@@ -204,12 +203,11 @@ static void synaptics_ts_report(
                 w = (finger[f].Wx + finger[f].Wy) / 2;
                 s_num++;
         }
-					input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
-					input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, w);
-					input_mt_sync(ts->input_dev);
-				}
-				input_sync(ts->input_dev);
-    
+        input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
+        input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, w);
+        input_mt_sync(ts->input_dev);
+    }
+    input_sync(ts->input_dev);
 }
 
 static void synaptics_ts_work_func(struct work_struct *work)
@@ -220,9 +218,9 @@ static void synaptics_ts_work_func(struct work_struct *work)
 	struct i2c_msg msg[2];
 	uint8_t start_reg;
 	uint8_t buf[0x35-0x14];
-    struct synaptics_ts_finger finger[2];
+	struct synaptics_ts_finger finger[2];
 	struct synaptics_ts_data *ts = container_of(work, struct synaptics_ts_data, work);
-    int num;
+	int num;
     
 	msg[0].addr = ts->client->addr;
 	msg[0].flags = 0;
@@ -242,14 +240,14 @@ static void synaptics_ts_work_func(struct work_struct *work)
 			bad_data = 1;
 		} else {
 			// printk(KERN_INFO "synaptics_ts_work_func: intr 0x%x\n", buf[0]);
-            if (!buf[0]) {
-                break;
-            }
+			if (!buf[0]) {
+				break;
+            		}
 			bad_data = 0;
-            synaptics_scan_finger_state(ts->finger, &buf[1]);
-            num = synaptics_get_fingers(ts->finger, finger, dim(finger));
-            // synaptics_dump_finger_state(finger, dim(finger));
-            synaptics_ts_report(ts, finger, num);
+			synaptics_scan_finger_state(ts->finger, &buf[1]);
+			num = synaptics_get_fingers(ts->finger, finger, dim(finger));
+			// synaptics_dump_finger_state(finger, dim(finger));
+			synaptics_ts_report(ts, finger, num);
 		}
 	}
 	if (ts->use_irq)
@@ -327,7 +325,7 @@ static int synaptics_ts_probe(
 			goto err_power_failed;
 		}
 	}
-
+    
 	ret = i2c_smbus_write_byte_data(ts->client, 0x8c, 0x01); /* device command = reset */
 	if (ret < 0) {
 		printk(KERN_ERR "i2c_smbus_write_byte_data failed\n");
@@ -336,10 +334,10 @@ static int synaptics_ts_probe(
 	{
 		int retry = 10;
 		while (retry-- > 0) {
-			msleep(100);
 			ret = i2c_smbus_read_byte_data(ts->client, 0x9a);
 			if (ret >= 0)
 				break;
+			msleep(100);
 		}
 	}
 	if (ret < 0) {
@@ -540,16 +538,15 @@ static int synaptics_ts_probe(
 		printk(KERN_ERR "synaptics_ts_probe: Unable to register %s input device\n", ts->input_dev->name);
 		goto err_input_register_device_failed;
 	}
-    //client->irq = 0;
 	if (client->irq) {
-        ret = 124;
-		printk("attentino gpio:%d\n", ret);
-        if (gpio_request(ret, "attention")) {
-    		printk(KERN_ERR "gpio_request irq failed\n");
-        }
-        if (gpio_direction_input(ret)) {
-    		printk(KERN_ERR "gpio_direction_input irq failed\n");
-        }
+        	ret = 124;
+		printk("attention gpio: %d\n", ret);
+        	if (gpio_request(ret, "attention")) {
+    			printk(KERN_ERR "gpio_request irq failed\n");
+        	}
+        	if (gpio_direction_input(ret)) {
+    			printk(KERN_ERR "gpio_direction_input irq failed\n");
+        	}
 		ret = request_irq(client->irq, synaptics_ts_irq_handler, 0, client->name, ts);
 		if (ret == 0) {
 			ret = i2c_smbus_write_byte_data(ts->client, 0x3a, 0x04); /* enable abs int */
@@ -625,7 +622,7 @@ static int synaptics_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 	if (ret < 0)
 		printk(KERN_ERR "synaptics_ts_suspend: i2c_smbus_write_byte_data failed\n");
 
-	ret = i2c_smbus_write_byte_data(ts->client, 0x39, 0x81); /* normal operation, 80 reports per second */
+	ret = i2c_smbus_write_byte_data(client, 0x39, 0x81); /* normal operation, 80 reports per second */
 	if (ret < 0)
 		printk(KERN_ERR "synaptics_ts_suspend: i2c_smbus_write_byte_data failed\n");
 	if (ts->power) {
@@ -647,17 +644,6 @@ static int synaptics_ts_resume(struct i2c_client *client)
 			printk(KERN_ERR "synaptics_ts_resume power on failed\n");
 	}
 
-	ret = i2c_smbus_write_byte_data(ts->client, 0x8c, 0x01); /* device command = reset */
-	if (ret < 0) {
-		printk(KERN_ERR "reset device failed\n");
-		/* fail? */
-	}
-    
-	ret = i2c_smbus_write_byte_data(ts->client, 0x3a, 0); /* disable interrupt */
-	if (ret < 0) {
-		printk(KERN_ERR "disable interrupt failed\n");
-	}
-    
 	synaptics_init_panel(ts);
 
 	if (ts->use_irq)

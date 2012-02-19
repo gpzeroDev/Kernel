@@ -19,6 +19,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  *
  */
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -34,7 +35,6 @@
 #include <linux/delay.h>
 #include <linux/sysctl.h>
 #include <asm/uaccess.h>
-#include <linux/smp_lock.h>
 
 #include <linux/mmc31xx.h>
 
@@ -52,7 +52,6 @@
 #define MMC31XX_DEV_NAME	"mmc31xx"
 
 static u32 read_idx = 0;
-struct class *mag_class;
 
 static struct i2c_client *this_client;
 
@@ -105,14 +104,14 @@ static int mmc31xx_i2c_tx_data(char *buf, int len)
 		if (i2c_transfer(this_client->adapter, msg, 1) >= 0) {
 			break;
 		}
-		mdelay(10);
+		pr_err("%s: retry\n",__FUNCTION__);
+		//mdelay(10);
 	}
 
 	if (i >= MMC31XX_RETRY_COUNT) {
 		pr_err("%s: retry over %d\n", __FUNCTION__, MMC31XX_RETRY_COUNT);
 		return -EIO;
 	}
-	
 	return 0;
 }
 
@@ -126,12 +125,15 @@ static int mmc31xx_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static int mmc31xx_ioctl(struct file *file, 
+static int mmc31xx_ioctl(struct inode *inode, struct file *file, 
 	unsigned int cmd, unsigned long arg)
 {
 	void __user *pa = (void __user *)arg;
 	unsigned char data[16] = {0};
 	int vec[3] = {0};
+
+	//pr_info("mmc31xx_ioctl++\n");
+
 
 	switch (cmd) {
 	case MMC31XX_IOC_TM:
@@ -169,10 +171,7 @@ static int mmc31xx_ioctl(struct file *file,
 		vec[0] = data[0] << 8 | data[1];
 		vec[1] = data[2] << 8 | data[3];
 		vec[2] = data[4] << 8 | data[5];
-	#if DEBUG
-		printk("[1X - %04x] [Y - %04x] [Z - %04x]\n", 
-			vec[0], vec[1], vec[2]);
-	#endif
+
 		if (copy_to_user(pa, vec, sizeof(vec))) {
 			return -EFAULT;
 		}
@@ -180,11 +179,14 @@ static int mmc31xx_ioctl(struct file *file,
 	case MMC31XX_IOC_READXYZ:
 		/* do RESET/SET every MMC31XX_RESET_INTV times read */
 		if (!(read_idx % MMC31XX_RESET_INTV)) {
+			//pr_info("mmc31xx_reset1\n");
 			/* RESET */
 			data[0] = MMC31XX_REG_CTRL;
 			data[1] = MMC31XX_CTRL_RST;
 			/* not check return value here, assume it always OK */
 			mmc31xx_i2c_tx_data(data, 2);
+			//pr_info("mmc31xx_reset2\n");
+
 			/* wait external capacitor charging done for next SET/RESET */
 			msleep(MMC31XX_DELAY_SET);
 			/* SET */
@@ -192,6 +194,8 @@ static int mmc31xx_ioctl(struct file *file,
 			data[1] = MMC31XX_CTRL_SET;
 			/* not check return value here, assume it always OK */
 			mmc31xx_i2c_tx_data(data, 2);
+			//pr_info("mmc31xx_reset3\n");
+
 			msleep(MMC31XX_DELAY_STDN);
 		}
 		/* send TM cmd before read */
@@ -199,6 +203,8 @@ static int mmc31xx_ioctl(struct file *file,
 		data[1] = MMC31XX_CTRL_TM;
 		/* not check return value here, assume it always OK */
 		mmc31xx_i2c_tx_data(data, 2);
+		//pr_info("mmc31xx_tx\n");
+
 		/* wait TM done for coming data read */
 		msleep(MMC31XX_DELAY_TM);
 		/* read xyz raw data */
@@ -211,9 +217,7 @@ static int mmc31xx_ioctl(struct file *file,
 		vec[1] = data[2] << 8 | data[3];
 		vec[2] = data[4] << 8 | data[5];
 	#if DEBUG
-		printk("[X - %04x] [Y - %04x] [Z - %04x]\n", 
-			vec[0], vec[1], vec[2]);
-		printk("M[X%d,Y%d,Z%d]\n", vec[0], vec[1], vec[2]);
+		pr_info("MMC31XX_IOC_READXYZ [X: %04d][Y: %04d][Z: %04d]\n", vec[0], vec[1], vec[2]);
 	#endif
 		if (copy_to_user(pa, vec, sizeof(vec))) {
 			return -EFAULT;
@@ -223,20 +227,9 @@ static int mmc31xx_ioctl(struct file *file,
 		break;
 	}
 
+	//pr_info("mmc31xx_ioctl--\n");
+
 	return 0;
-}
-
-
-static long mmc31xx_unlocked_ioctl(struct file *file, 
-	unsigned int cmd, unsigned long arg)
-{
-	long ret;
-
-	lock_kernel();
-	ret = mmc31xx_ioctl(file, cmd, arg);
-	unlock_kernel();
-
-	return ret;
 }
 
 static ssize_t mmc31xx_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -255,7 +248,7 @@ static struct file_operations mmc31xx_fops = {
 	.owner		= THIS_MODULE,
 	.open		= mmc31xx_open,
 	.release	= mmc31xx_release,
-	.unlocked_ioctl	= mmc31xx_unlocked_ioctl,
+	.ioctl		= mmc31xx_ioctl,
 };
 
 static struct miscdevice mmc31xx_device = {
@@ -330,25 +323,13 @@ static struct i2c_driver mmc31xx_driver = {
 
 static int __init mmc31xx_init(void)
 {
-	struct device *dev_t;
-	printk(KERN_DEBUG "mmc31xx driver: init\n");
-	mag_class = class_create(THIS_MODULE, "magnetic");
-
-	if (IS_ERR(mag_class)) 
-		return PTR_ERR( mag_class );
-
-	dev_t = device_create( mag_class, NULL, 0, "%s", "mmc31xx");
-
-	if (IS_ERR(dev_t)) 
-	{
-		return PTR_ERR(dev_t);
-	}
+	pr_info("mmc31xx driver: init\n");
 	return i2c_add_driver(&mmc31xx_driver);
 }
 
 static void __exit mmc31xx_exit(void)
 {
-	printk(KERN_DEBUG "mmc31xx driver: exit\n");
+	pr_info("mmc31xx driver: exit\n");
 	i2c_del_driver(&mmc31xx_driver);
 }
 

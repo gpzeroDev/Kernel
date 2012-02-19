@@ -140,7 +140,7 @@ static void usb_do_remote_wakeup(struct work_struct *w);
 
 #define USB_CHG_DET_DELAY	msecs_to_jiffies(1000)
 #define REMOTE_WAKEUP_DELAY	msecs_to_jiffies(1000)
-extern void update_usb_to_gui(int i);
+
 struct usb_info {
 	/* lock for register/queue/device state changes */
 	spinlock_t lock;
@@ -249,25 +249,16 @@ static ssize_t print_switch_state(struct switch_dev *sdev, char *buf)
 {
 	return sprintf(buf, "%s\n", sdev->state ? "online" : "offline");
 }
-#define USB_CHARGER_MASK 0x0200
-#define WALL_CHARGER_MASK 0x0800
-#define USB_WALL_CHARGER_MASK 0x0c00
+
 static inline enum chg_type usb_get_chg_type(struct usb_info *ui)
 {
 	if ((readl(USB_PORTSC) & PORTSC_LS) == PORTSC_LS)
-	{
-		update_usb_to_gui(3);
 		return USB_CHG_TYPE__WALLCHARGER;
-	}
 	else
-	{
-		update_usb_to_gui(2);
 		return USB_CHG_TYPE__SDP;
-	}
 }
 
-#define USB_WALLCHARGER_CHG_CURRENT_1000MA 1000
-#define USB_WALLCHARGER_CHG_CURRENT_700MA 700
+#define USB_WALLCHARGER_CHG_CURRENT_1500MA 1500
 
 static int usb_get_max_power(struct usb_info *ui)
 {
@@ -292,10 +283,7 @@ static int usb_get_max_power(struct usb_info *ui)
 		return -ENODEV;
 
 	if (temp == USB_CHG_TYPE__WALLCHARGER || temp == USB_CHG_TYPE__SDP)
-	return USB_WALLCHARGER_CHG_CURRENT_1000MA;
-
-	if (temp == USB_CHG_TYPE__WALLCHARGER || temp == USB_CHG_TYPE__SDP)
-	return USB_WALLCHARGER_CHG_CURRENT_700MA;
+		return USB_WALLCHARGER_CHG_CURRENT_1500MA;
 
 	if (suspended || !configured)
 		return 0;
@@ -312,7 +300,7 @@ static void usb_chg_stop(struct work_struct *w)
 	temp = atomic_read(&otg->chg_type);
 
 	if (temp == USB_CHG_TYPE__SDP)
-		otg_set_power(ui->xceiv, 0);
+		hsusb_chg_vbus_draw(0);
 }
 
 static void usb_chg_detect(struct work_struct *w)
@@ -336,7 +324,7 @@ static void usb_chg_detect(struct work_struct *w)
 	atomic_set(&otg->chg_type, temp);
 	maxpower = usb_get_max_power(ui);
 	if (maxpower > 0)
-		otg_set_power(ui->xceiv, maxpower);
+		hsusb_chg_vbus_draw(maxpower);
 
 	/* USB driver prevents idle and suspend power collapse(pc)
 	 * while USB cable is connected. But when dedicated charger is
@@ -346,6 +334,9 @@ static void usb_chg_detect(struct work_struct *w)
 	 * wakelock which will be re-acquired for any sub-sequent usb interrupts
 	 * */
 	if (temp == USB_CHG_TYPE__WALLCHARGER) {
+		/* select DEVICE mode */
+		writel(0x12, USB_USBMODE);
+		msleep(1);
 		pm_runtime_put_sync(&ui->pdev->dev);
 		wake_unlock(&ui->wlock);
 	}
@@ -1209,6 +1200,10 @@ static void usb_reset(struct usb_info *ui)
 	/* Reset link and phy */
 	otg->reset(ui->xceiv, 1);
 
+	/* select DEVICE mode */
+	writel(0x12, USB_USBMODE);
+	msleep(1);
+
 	/* set usb controller interrupt threshold to zero*/
 	writel((readl(USB_USBCMD) & ~USBCMD_ITC_MASK) | USBCMD_ITC(0),
 							USB_USBCMD);
@@ -1250,6 +1245,8 @@ static int usb_free(struct usb_info *ui, int ret)
 
 	if (ui->xceiv)
 		otg_put_transceiver(ui->xceiv);
+
+	hsusb_chg_init(0);
 
 	if (ui->irq)
 		free_irq(ui->irq, 0);
@@ -1349,8 +1346,6 @@ static void usb_do_work(struct work_struct *w)
 				dev_info(&ui->pdev->dev,
 					"msm72k_udc: ONLINE -> OFFLINE\n");
 
-				update_usb_to_gui(0);
-
 				atomic_set(&ui->running, 0);
 				atomic_set(&ui->remote_wakeup, 0);
 				atomic_set(&ui->configured, 0);
@@ -1370,8 +1365,8 @@ static void usb_do_work(struct work_struct *w)
 				 * we must let modem know about charger
 				 * disconnection
 				 */
-
-				otg_set_power(ui->xceiv, 0);
+				if (usb_get_chg_type(ui) != USB_CHG_TYPE__INVALID)
+					hsusb_chg_connected(USB_CHG_TYPE__INVALID);
 
 				if (ui->irq) {
 					free_irq(ui->irq, ui);
@@ -1402,7 +1397,7 @@ static void usb_do_work(struct work_struct *w)
 				if (maxpower < 0)
 					break;
 
-				otg_set_power(ui->xceiv, 0);
+				hsusb_chg_vbus_draw(0);
 				/* To support TCXO during bus suspend
 				 * This might be dummy check since bus suspend
 				 * is not implemented as of now
@@ -1427,7 +1422,7 @@ static void usb_do_work(struct work_struct *w)
 					break;
 
 				ui->chg_current = maxpower;
-				otg_set_power(ui->xceiv, maxpower);
+				hsusb_chg_vbus_draw(maxpower);
 				break;
 			}
 			if (flags & USB_FLAG_RESET) {
@@ -2088,14 +2083,11 @@ static ssize_t store_usb_chg_current(struct device *dev,
 	struct usb_info *ui = the_usb_info;
 	unsigned long mA;
 
-	if (ui->gadget.is_a_peripheral)
-		return -EINVAL;
-
 	if (strict_strtoul(buf, 10, &mA))
 		return -EINVAL;
 
 	ui->chg_current = mA;
-	otg_set_power(ui->xceiv, mA);
+	hsusb_chg_vbus_draw(mA);
 
 	return count;
 }
@@ -2208,6 +2200,8 @@ static int msm72k_probe(struct platform_device *pdev)
 		ui->phy_reset = pdata->phy_reset;
 		ui->phy_init_seq = pdata->phy_init_seq;
 	}
+
+	hsusb_chg_init(1);
 
 	ui->buf = dma_alloc_coherent(&pdev->dev, 4096, &ui->dma, GFP_KERNEL);
 	if (!ui->buf)

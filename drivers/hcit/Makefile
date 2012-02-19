@@ -1,6 +1,4 @@
-
 # LED Platform Drivers
-obj-y		+= hcit.o
-#obj-m		:= hcit.o
+obj-$(CONFIG_HCIT) += hcit.o
 
 

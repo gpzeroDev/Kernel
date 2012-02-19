@@ -26,7 +26,6 @@
 #include <linux/platform_device.h>
 #include <linux/mfd/marimba-tsadc.h>
 #include <linux/pm.h>
-#include <linux/slab.h>
 
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 #include <linux/earlysuspend.h>
