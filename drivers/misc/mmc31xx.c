@@ -134,7 +134,6 @@ static int mmc31xx_ioctl(struct inode *inode, struct file *file,
 
 	//pr_info("mmc31xx_ioctl++\n");
 
-
 	switch (cmd) {
 	case MMC31XX_IOC_TM:
 		data[0] = MMC31XX_REG_CTRL;
@@ -171,7 +170,10 @@ static int mmc31xx_ioctl(struct inode *inode, struct file *file,
 		vec[0] = data[0] << 8 | data[1];
 		vec[1] = data[2] << 8 | data[3];
 		vec[2] = data[4] << 8 | data[5];
-
+	#if DEBUG
+		printk("[1X - %04x] [Y - %04x] [Z - %04x]\n", 
+			vec[0], vec[1], vec[2]);
+	#endif
 		if (copy_to_user(pa, vec, sizeof(vec))) {
 			return -EFAULT;
 		}

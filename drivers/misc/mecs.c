@@ -54,7 +54,7 @@ static atomic_t	o_flag;
 static atomic_t	p_flag;
 static atomic_t	l_flag;
 
-static short ecompass_delay = 200;
+static short ecompass_delay = 0;
 
 
 static struct input_dev *ecs_data_device;
@@ -74,26 +74,12 @@ static struct miscdevice ecs_ctrl_device = {
 
 static int ecs_ctrl_open(struct inode *inode, struct file *file)
 {
-#if 1
 	atomic_set(&reserve_open_flag, 1);
 	atomic_set(&open_flag, 1);
 	atomic_set(&open_count, 1);
 	wake_up(&open_wq);
 
 	return 0;
-#else
-	int ret = -1;
-
-	if (atomic_cmpxchg(&open_count, 0, 1) == 0) {
-		if (atomic_cmpxchg(&open_flag, 0, 1) == 0) {
-			atomic_set(&reserve_open_flag, 1);
-			wake_up(&open_wq);
-			ret = 0;
-		}
-	}
-
-	return ret;
-#endif
 }
 
 static int ecs_ctrl_release(struct inode *inode, struct file *file)
@@ -117,12 +103,14 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 
 	//pr_info("ecompass ecs_ctrl_ioctl++ 0x%x\n",cmd);
 
+
 	switch (cmd) {
 	case ECOMPASS_IOC_SET_MODE:
 		break;
 	case ECOMPASS_IOC_SET_DELAY:
 		if (copy_from_user(&delay, pa, sizeof(delay)))
 			return -EFAULT;
+		ecompass_delay = delay;
 		break;
 	case ECOMPASS_IOC_GET_DELAY:
 		delay = ecompass_delay;
@@ -166,6 +154,7 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 		if (copy_to_user(pa, &flag, sizeof(flag)))
 			return -EFAULT;
 		break;
+
 	case ECOMPASS_IOC_SET_PFLAG:
 		if (copy_from_user(&flag, pa, sizeof(flag)))
 			return -EFAULT;
@@ -194,7 +183,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 	case ECOMPASS_IOC_SET_APARMS:
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
-		break;
 		/* acceleration x-axis */
 		input_set_abs_params(ecs_data_device, ABS_X, 
 			parms[0], parms[1], parms[2], parms[3]);
@@ -211,7 +199,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
 		/* magnetic raw x-axis */
-		break;
 		input_set_abs_params(ecs_data_device, ABS_HAT0X, 
 			parms[0], parms[1], parms[2], parms[3]);
 		/* magnetic raw y-axis */
@@ -227,7 +214,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
 		/* orientation yaw */
-		break;
 		input_set_abs_params(ecs_data_device, ABS_RX, 
 			parms[0], parms[1], parms[2], parms[3]);
 		break;
@@ -237,7 +223,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
 		/* orientation pitch */
-		break;
 		input_set_abs_params(ecs_data_device, ABS_RY, 
 			parms[0], parms[1], parms[2], parms[3]);
 		break;
@@ -247,7 +232,6 @@ static int ecs_ctrl_ioctl(struct inode *inode, struct file *file,
 		if (copy_from_user(parms, pa, sizeof(parms)))
 			return -EFAULT;
 		/* orientation roll */
-		break;
 		input_set_abs_params(ecs_data_device, ABS_RZ, 
 			parms[0], parms[1], parms[2], parms[3]);
 		break;
@@ -390,7 +374,6 @@ static int __init ecompass_init(void)
 		pr_err("%s: device_create_file failed\n", __FUNCTION__);
 		goto out_deregister_misc;
 	}
-
 
 	pr_info("ecompass driver: init--\n");
 

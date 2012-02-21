@@ -376,6 +376,7 @@ static enum power_supply_property msm_batt_power_props[] = {
 	#define CAPACITY_PERCENTAGE(curV, vL, pL, vH, pH) (pL+((pH-pL)*(curV-vL)*100/(vH-vL))/100)
 
 	static u32 calculate_capacity(u32 current_voltage);
+	static u32 once = 0;
 #endif
 
 extern void request_suspend_state(suspend_state_t new_state);
@@ -665,15 +666,14 @@ static void real_msm_batt_update_psy_status(void)
 			msm_batt_info.batt_health = POWER_SUPPLY_HEALTH_UNKNOWN;
 		}
 
-		if (msm_batt_info.batt_status != POWER_SUPPLY_STATUS_CHARGING) {
+		if (msm_batt_info.batt_status != POWER_SUPPLY_STATUS_CHARGING &&
+			once != 0) {
 			if (battery_status == BATTERY_STATUS_INVALID) {
 				DBG_LIMIT("BATT: Battery -> unknown\n");
-				msm_batt_info.batt_status =
-					POWER_SUPPLY_STATUS_UNKNOWN;
+				msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_UNKNOWN;
 			} else {
 				DBG_LIMIT("BATT: Battery -> discharging\n");
-				msm_batt_info.batt_status =
-					POWER_SUPPLY_STATUS_DISCHARGING;
+				msm_batt_info.batt_status =	POWER_SUPPLY_STATUS_DISCHARGING;
 			}
 		}
 
@@ -1227,10 +1227,8 @@ bool get_chg_status(void)
  */
 u32 calculate_capacity(u32 current_voltage)
 {
-    static u32 once = 0;
     static u32 pre_percentage = BATTERY_PERCENT_5;
     u32 cur_percentage = BATTERY_PERCENT_5;
-
     bool is_chg = get_chg_status();
 
 	rep_batt_chg.v1.battery_level = BATTERY_LEVEL_GOOD;
